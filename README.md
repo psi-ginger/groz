@@ -12,6 +12,7 @@
 - **A\* Pathfinding & LOS:** ระบบเดินอัจฉริยะ A\* พร้อมการตรวจ Line-of-Sight (Bresenham) ถอยก้าวหลบมุมตึก/กำแพง
 - **Dijkstra Multi-Map Router:** คำนวณเส้นทางข้ามแมพหลายทอดจาก Prontera สู่ Payon พร้อมระบบเลือกวาร์ปที่เข้าถึงได้จริง (คัดทิ้งวาร์ปหน้าผาปิด)
 - **Delegated AutoHunt:** มอบหมายระบบฟาร์มให้ Auto-Play ของเซิร์ฟเวอร์ (`0x0CF0`) จัดการเอง พฤติกรรมในเกมเนียนตาเหมือนคนเล่นจริง
+- **Auto-Status & Auto-Skill Engine:** ระบบจัดสรรแต้ม Status Point และ Skill Point อัตโนมัติเมื่อเลเวลอัพ กำหนดเป้าหมายผ่าน JSON หรือ Quick Edit บนหน้าเว็บ
 - **Web HUD & Radar Mini-Map:** ควบคุมบอทผ่านมือถือ/คอมพิวเตอร์ที่ `http://localhost:8080` พร้อม Mini-Map เรดาร์พิกัดสด
 - **Self-Contained & Portable:** มีไฟล์แผนที่ (`fields/`) และตารางแพ็กเก็ต (`tables/`) ในตัว สามารถก๊อปปี้ไปรันบน VPS / Linux / Docker ได้ทันที
 
