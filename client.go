@@ -150,15 +150,11 @@ func (c *BotClient) StartLoginFlow() error {
 	}
 
 	if NormalizeMapName(c.CurrentMap) == NormalizeMapName(c.LockMap) {
-		fmt.Printf("[4/4] ยืนบน LockMap (%s) แล้ว! เปิดใช้งานระบบ [ล่าอัตโนมัติ 0x0CF0] ของ Rozclub...\n", c.LockMap)
-		if err := c.triggerAutoHunt(); err != nil {
-			return fmt.Errorf("autohunt trigger failed: %w", err)
-		}
-		c.AutoHuntActive = true
+		fmt.Printf("[4/4] ยืนบน LockMap (%s) แล้ว! เตรียมเปิดระบบล่าอัตโนมัติ 0x0CF0 หลังเชื่อมต่อสำเร็จ...\n", c.LockMap)
 	} else {
 		fmt.Printf("[4/4] ยืนบนแมพ %s (เป้าหมาย: %s) -> เริ่มต้นระบบนำทาง GPS สู่แมพฟาร์ม...\n", c.CurrentMap, c.LockMap)
-		c.AutoHuntActive = false
 	}
+	c.AutoHuntActive = false
 
 	c.maintainMapConnection()
 	return nil
@@ -573,9 +569,13 @@ func (c *BotClient) maintainMapConnection() {
 			} else {
 				// ถึงแมพเป้าหมายแล้ว: ถ้ายังไม่ได้เปิด AutoHunt ให้เปิดทันที!
 				if !c.AutoHuntActive {
+					if c.MapPort != 5121 && !c.CipherActive {
+						time.Sleep(500 * time.Millisecond)
+						continue
+					}
 					c.AutoHuntActive = true
-					c.sendMapPacket(BuildRozPacket(OpStart, "full"))
-					fmt.Printf("\n[⚔️ LockMap] ถึงแมพเป้าหมาย %s แล้ว! เปิดระบบล่าอัตโนมัติ 0x0CF0 เรียบร้อย\n", c.LockMap)
+					_ = c.triggerAutoHunt()
+					fmt.Printf("\n[⚔️ LockMap] ยืนบนแมพเป้าหมาย %s แล้ว! เปิดระบบล่าอัตโนมัติ 0x0CF0 เรียบร้อย\n", c.LockMap)
 				}
 			}
 		}
