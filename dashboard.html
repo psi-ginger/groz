@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Rozclub Multi-Bot</title>
+<style>
+  :root {
+    --bg: #090d13;
+    --card: #121820;
+    --border: #26303d;
+    --border-hover: #3b4859;
+    --text: #e6edf3;
+    --muted: #7d8590;
+    --hp: #f85149;
+    --sp: #58a6ff;
+    --job: #bc8cff;
+    --accent: #238636;
+    --accent-hover: #2ea043;
+    --danger: #da3633;
+    --warn: #d29922;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  body { background: var(--bg); color: var(--text); padding: 14px; max-width: 920px; margin: 0 auto; min-height: 100vh; font-size: 13px; line-height: 1.45; }
+  
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .title { font-size: 1.05rem; font-weight: 700; letter-spacing: 0.5px; }
+  .btn-group { display: flex; gap: 8px; }
+  .btn-sm { background: #1c2430; border: 1px solid var(--border); color: var(--text); padding: 5px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease; }
+  .btn-sm:hover { background: #263242; border-color: var(--border-hover); }
+  .btn-accent { background: var(--accent); border-color: rgba(240,246,252,0.15); color: #fff; }
+  .btn-accent:hover { background: var(--accent-hover); }
+  
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  
+  .bot-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; box-shadow: 0 3px 8px rgba(0,0,0,0.3); transition: border-color 0.2s ease; }
+  .bot-card:hover { border-color: var(--border-hover); }
+  
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+  .bot-title { display: flex; align-items: baseline; gap: 8px; }
+  .char-name { font-size: 1.02rem; font-weight: 700; color: #fff; }
+  .job-class { font-size: 0.82rem; color: var(--sp); font-weight: 600; }
+  
+  .badge { padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .badge-on { background: rgba(35,134,54,0.2); color: #3fb950; border: 1px solid rgba(63,185,80,0.3); }
+  .badge-off { background: rgba(218,54,51,0.2); color: #f85149; border: 1px solid rgba(248,81,73,0.3); }
+
+  .data-grid { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+  .data-row { display: flex; justify-content: space-between; }
+  .data-col { flex: 1; display: flex; gap: 6px; }
+  .lbl { color: var(--muted); min-width: 44px; }
+  .val { color: var(--text); font-weight: 600; }
+  .val-hp { color: var(--hp); }
+  .val-sp { color: var(--sp); }
+  .val-job { color: var(--job); }
+  
+  .card-actions { display: flex; gap: 6px; margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px; }
+  .btn-act { flex: 1; padding: 6px 8px; border-radius: 6px; font-size: 0.76rem; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: #18202a; color: var(--text); transition: all 0.15s ease; text-align: center; }
+  .btn-act:hover { background: #222d3b; border-color: var(--border-hover); }
+  .btn-start { background: var(--accent); color: #fff; border-color: transparent; }
+  .btn-start:hover { background: var(--accent-hover); }
+  .btn-stop { background: #3c1e1e; color: #f85149; border-color: rgba(248,81,73,0.3); }
+  .btn-stop:hover { background: #4d2323; }
+  .btn-del { color: #f85149; flex: 0 0 auto; padding: 6px 10px; }
+  .btn-cfg { color: var(--sp); }
+  
+  /* Quick Config Panel */
+  .cfg-panel { display: none; margin-top: 10px; padding: 10px; background: #0b0f14; border: 1px solid var(--border); border-radius: 6px; }
+  .cfg-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; gap: 8px; }
+  .cfg-label { font-size: 0.74rem; color: var(--muted); min-width: 105px; }
+  .cfg-input { flex: 1; background: #121820; border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; color: var(--text); font-size: 0.78rem; font-family: inherit; }
+  .cfg-input:focus { outline: none; border-color: var(--sp); }
+  .cfg-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+  .cfg-status { font-size: 0.72rem; color: #3fb950; min-height: 16px; }
+  .btn-save { background: var(--accent); color: white; border: none; padding: 5px 12px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
+  .btn-save:hover { background: var(--accent-hover); }
+
+  /* Mini-Map Radar Box */
+  .map-box { margin: 8px 0; background: #070a0f; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .map-header { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; background: #10161f; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.72rem; }
+  .map-badge { color: var(--sp); font-weight: 700; letter-spacing: 0.5px; }
+  .map-coords { color: #3fb950; font-weight: 600; }
+  .canvas-wrap { display: flex; justify-content: center; align-items: center; padding: 4px; background: #06090e; }
+  .canvas-wrap canvas { width: 100%; max-width: 280px; height: auto; aspect-ratio: 1 / 1; border-radius: 4px; display: block; image-rendering: pixelated; }
+
+  /* Modal */
+  .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); align-items: center; justify-content: center; z-index: 99; padding: 14px; }
+  .modal-content { background: var(--card); border: 1px solid var(--border); border-radius: 8px; width: 100%; max-width: 380px; padding: 16px; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .form-group { margin-bottom: 10px; }
+  .form-label { display: block; font-size: 0.74rem; color: var(--muted); margin-bottom: 4px; }
+  .form-input { width: 100%; background: #0b0f14; border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; color: var(--text); font-size: 0.82rem; font-family: inherit; }
+  .form-btn { width: 100%; background: var(--accent); color: white; border: none; padding: 8px; border-radius: 6px; font-weight: 600; cursor: pointer; margin-top: 6px; font-size: 0.82rem; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">Rozclub Multi-Bot</div>
+    <div class="btn-group">
+      <button class="btn-sm btn-accent" onclick="openAddModal()">+ เพิ่มโปรไฟล์</button>
+    </div>
+  </div>
+
+  <div class="grid" id="botsGrid"></div>
+
+  <!-- Modal สร้างโปรไฟล์ใหม่ -->
+  <div class="modal" id="addModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 style="font-size:0.95rem">เพิ่มโปรไฟล์ใหม่</h3>
+        <button onclick="closeAddModal()" style="background:none; border:none; color:var(--muted); font-size:1.1rem; cursor:pointer">&times;</button>
+      </div>
+      <form id="profileForm" onsubmit="saveProfile(event)">
+        <div class="form-group">
+          <label class="form-label">ชื่อโปรไฟล์</label>
+          <input class="form-input" id="pName" required placeholder="เช่น แมวหลัก, พระPayon">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input class="form-input" id="pUser" required placeholder="ไอดีเกม">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input class="form-input" id="pPass" type="password" required placeholder="รหัสผ่าน">
+        </div>
+        <div class="form-group" style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+          <div>
+            <label class="form-label">Slot (0-5)</label>
+            <input class="form-input" id="pSlot" type="number" min="0" max="5" value="0">
+          </div>
+          <div>
+            <label class="form-label">Lock Map</label>
+            <input class="form-input" id="pMap" value="pay_dun00">
+          </div>
+        </div>
+        <button type="submit" class="form-btn">บันทึกโปรไฟล์</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    function createCardElement(id) {
+      const card = document.createElement('div');
+      card.id = 'bot-card-' + id;
+      card.className = 'bot-card';
+      card.innerHTML = `
+        <div class="card-header">
+          <div class="bot-title">
+            <span class="char-name" id="name-${id}">-</span>
+            <span class="job-class" id="job-${id}">Novice</span>
+          </div>
+          <span class="badge" id="badge-${id}">OFFLINE</span>
+        </div>
+
+        <div class="data-grid">
+          <div class="data-row">
+            <div class="data-col"><span class="lbl">HP:</span><span class="val val-hp" id="hp-${id}">-</span></div>
+            <div class="data-col"><span class="lbl">SP:</span><span class="val val-sp" id="sp-${id}">-</span></div>
+          </div>
+          <div class="data-row">
+            <div class="data-col"><span class="lbl">Lv:</span><span class="val" id="base-lv-${id}">-</span></div>
+            <div class="data-col"><span class="lbl">JLv:</span><span class="val val-job" id="job-lv-${id}">-</span></div>
+          </div>
+          <div class="data-row">
+            <div class="data-col"><span class="lbl">Zeny:</span><span class="val" id="zeny-${id}">0 z</span></div>
+            <div class="data-col"><span class="lbl">Weight:</span><span class="val" id="weight-${id}">0/0 (0%)</span></div>
+          </div>
+          <div class="data-row">
+            <div class="data-col" style="flex:2"><span class="lbl">Map:</span><span class="val" id="map-${id}">-</span></div>
+          </div>
+          <div class="data-row">
+            <div class="data-col" style="flex:2"><span class="lbl">Status:</span><span class="val" id="status-${id}">-</span></div>
+          </div>
+        </div>
+
+        <!-- Mini-Map Radar -->
+        <div class="map-box" id="map-box-${id}">
+          <div class="map-header">
+            <span class="map-badge" id="map-name-badge-${id}">-</span>
+            <span class="map-coords" id="map-coords-badge-${id}">X: 0, Y: 0</span>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="map-canvas-${id}" width="280" height="280"></canvas>
+          </div>
+        </div>
+
+        <div class="card-actions">
+          <button class="btn-act" id="action-btn-${id}">-</button>
+          <button class="btn-act btn-cfg" onclick="toggleConfig('${id}')">ตั้งค่า</button>
+          <button class="btn-act btn-del" onclick="deleteProfile('${id}')">ลบ</button>
+        </div>
+
+        <!-- Quick Config Panel -->
+        <div class="cfg-panel" id="cfg-panel-${id}">
+          <div class="cfg-row">
+            <span class="cfg-label">Lock Map:</span>
+            <input class="cfg-input" id="cfg-lockmap-${id}" placeholder="เช่น pay_dun00">
+          </div>
+          <div class="cfg-row">
+            <span class="cfg-label">NPC ขายของ (Sell):</span>
+            <input class="cfg-input" id="cfg-sell-${id}" placeholder="เช่น payon 150, 120">
+          </div>
+          <div class="cfg-row">
+            <span class="cfg-label">NPC ฝากคลัง (Store):</span>
+            <input class="cfg-input" id="cfg-store-${id}" placeholder="เช่น payon 180, 100">
+          </div>
+          <div class="cfg-footer">
+            <span class="cfg-status" id="cfg-status-${id}"></span>
+            <button class="btn-save" onclick="saveQuickConfig('${id}')">บันทึกค่า</button>
+          </div>
+        </div>
+      `;
+      return card;
+    }
+
+    function toggleConfig(id) {
+      const panel = document.getElementById('cfg-panel-' + id);
+      if (panel) {
+        panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+      }
+    }
+
+    async function saveQuickConfig(id) {
+      const lockMap = document.getElementById('cfg-lockmap-' + id).value;
+      const npcsell = document.getElementById('cfg-sell-' + id).value;
+      const npcstore = document.getElementById('cfg-store-' + id).value;
+      const statusElem = document.getElementById('cfg-status-' + id);
+
+      try {
+        const res = await fetch('/api/profiles/quick-update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: id,
+            lock_map: lockMap,
+            npc_sell: npcsell,
+            npc_store: npcstore
+          })
+        });
+        if (res.ok) {
+          statusElem.innerText = '✓ บันทึกสำเร็จ';
+          setTimeout(() => { statusElem.innerText = ''; }, 3000);
+        } else {
+          statusElem.innerText = 'เกิดข้อผิดพลาด';
+        }
+      } catch (err) {
+        statusElem.innerText = 'เชื่อมต่อไม่ได้';
+      }
+    }
+
+    const mapImageCache = {};
+    const mapInfoCache = {};
+    const mapLoadingState = {};
+
+    function drawMinimap(id, mapName, x, y) {
+      const canvas = document.getElementById('map-canvas-' + id);
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const cw = canvas.width;
+      const ch = canvas.height;
+
+      if (!mapName || mapName === '-' || mapName === '') {
+        ctx.fillStyle = '#06090e';
+        ctx.fillRect(0, 0, cw, ch);
+        ctx.fillStyle = '#484f58';
+        ctx.font = '11px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('รอข้อมูลแผนที่...', cw / 2, ch / 2);
+        return;
+      }
+
+      // โหลดข้อมูลภาพและพิกัดวาร์ปถ้ายังไม่มีใน Cache
+      if (!mapImageCache[mapName] && !mapLoadingState[mapName]) {
+        mapLoadingState[mapName] = true;
+        const img = new Image();
+        img.src = '/api/map/image?map=' + encodeURIComponent(mapName);
+        img.onload = () => {
+          mapImageCache[mapName] = img;
+          drawMinimap(id, mapName, x, y);
+        };
+        fetch('/api/map/info?map=' + encodeURIComponent(mapName))
+          .then(res => res.json())
+          .then(info => {
+            mapInfoCache[mapName] = info;
+            drawMinimap(id, mapName, x, y);
+          })
+          .catch(() => {});
+      }
+
+      const img = mapImageCache[mapName];
+      const info = mapInfoCache[mapName] || { width: 400, height: 400, portals: [] };
+      const mw = info.width || 400;
+      const mh = info.height || 400;
+
+      // ล้าง Canvas
+      ctx.fillStyle = '#070a0f';
+      ctx.fillRect(0, 0, cw, ch);
+
+      // วาดภาพพื้นแมพ
+      if (img) {
+        ctx.drawImage(img, 0, 0, cw, ch);
+      } else {
+        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+        ctx.lineWidth = 1;
+        for (let i = 20; i < cw; i += 20) {
+          ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, ch); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(cw, i); ctx.stroke();
+        }
+      }
+
+      // วาดประตูวาร์ป (สีม่วงนีออน)
+      if (info.portals && info.portals.length > 0) {
+        info.portals.forEach(p => {
+          const px = (p.x / mw) * cw;
+          const py = ((mh - p.y) / mh) * ch;
+          ctx.beginPath();
+          ctx.arc(px, py, 3, 0, Math.PI * 2);
+          ctx.fillStyle = '#bc8cff';
+          ctx.fill();
+          ctx.strokeStyle = '#381e72';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        });
+      }
+
+      // วาดตำแหน่งตัวละครบอท (จุดสีเขียวนีออน กะพริบเรดาร์)
+      if (x > 0 && y > 0) {
+        const px = (x / mw) * cw;
+        const py = ((mh - y) / mh) * ch;
+
+        // วงแหวนเรดาร์
+        ctx.beginPath();
+        ctx.arc(px, py, 7, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(63, 185, 80, 0.3)';
+        ctx.fill();
+
+        // ตัวละคร
+        ctx.beginPath();
+        ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#3fb950';
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
+    }
+
+    async function updateDashboard() {
+      try {
+        const res = await fetch('/api/status');
+        const bots = await res.json();
+        const grid = document.getElementById('botsGrid');
+
+        if (!bots || bots.length === 0) {
+          grid.innerHTML = '<div id="emptyMsg" style="grid-column: 1/-1; text-align:center; padding: 24px; color:var(--muted)">ยังไม่มีโปรไฟล์บอท กดปุ่ม [+ เพิ่มโปรไฟล์] ด้านบนเพื่อสร้างตัวแรกได้เลยค่ะ</div>';
+          return;
+        }
+
+        const emptyMsg = document.getElementById('emptyMsg');
+        if (emptyMsg) emptyMsg.remove();
+
+        const currentIds = new Set(bots.map(b => b.profile_id));
+        Array.from(grid.children).forEach(card => {
+          const id = card.id.replace('bot-card-', '');
+          if (!currentIds.has(id)) {
+            card.remove();
+          }
+        });
+
+        bots.forEach(b => {
+          const id = b.profile_id;
+          let card = document.getElementById('bot-card-' + id);
+          if (!card) {
+            card = createCardElement(id);
+            grid.appendChild(card);
+          }
+
+          // Header: Name & Job
+          const displayName = b.char_name || b.profile_name || b.profile_id;
+          document.getElementById('name-' + id).innerText = displayName;
+          document.getElementById('job-' + id).innerText = b.job_class || "Novice";
+
+          // Badge
+          const badgeElem = document.getElementById('badge-' + id);
+          badgeElem.className = 'badge ' + (b.is_hunting ? 'badge-on' : 'badge-off');
+          badgeElem.innerText = b.is_hunting ? 'ONLINE' : 'STOPPED';
+
+          // HP / SP
+          const hpPct = b.max_hp > 0 ? Math.round((b.hp / b.max_hp) * 100) : 0;
+          const spPct = b.max_sp > 0 ? Math.round((b.sp / b.max_sp) * 100) : 0;
+          document.getElementById('hp-' + id).innerText = `${b.hp} / ${b.max_hp} (${hpPct}%)`;
+          document.getElementById('sp-' + id).innerText = `${b.sp} / ${b.max_sp} (${spPct}%)`;
+
+          // Level & Percent
+          const basePct = (b.base_exp_pct || 0).toFixed(1);
+          const jobPct = (b.job_exp_pct || 0).toFixed(1);
+          document.getElementById('base-lv-' + id).innerText = `${b.base_level} (${basePct}%)`;
+          document.getElementById('job-lv-' + id).innerText = `${b.job_level} (${jobPct}%)`;
+
+          // Zeny & Weight
+          const wPct = b.max_weight > 0 ? Math.round((b.weight / b.max_weight) * 100) : 0;
+          document.getElementById('zeny-' + id).innerText = (b.zeny || 0).toLocaleString() + ' z';
+          document.getElementById('weight-' + id).innerText = `${b.weight || 0} / ${b.max_weight || 0} (${wPct}%)`;
+
+          // Map & Status
+          const mapName = b.current_map || "-";
+          const coords = (b.current_x || b.current_y) ? ` (${b.current_x}, ${b.current_y})` : '';
+          document.getElementById('map-' + id).innerText = mapName + coords;
+          document.getElementById('status-' + id).innerText = b.status_text || "-";
+
+          // Mini-Map Radar Update
+          const mapBadge = document.getElementById('map-name-badge-' + id);
+          const coordsBadge = document.getElementById('map-coords-badge-' + id);
+          if (mapBadge) mapBadge.innerText = mapName;
+          if (coordsBadge) coordsBadge.innerText = (b.current_x || b.current_y) ? `X: ${b.current_x}, Y: ${b.current_y}` : 'พิกัด: -';
+          drawMinimap(id, mapName, b.current_x, b.current_y);
+
+          // Action Button
+          const actionBtn = document.getElementById('action-btn-' + id);
+          if (b.is_hunting) {
+            actionBtn.className = 'btn-act btn-stop';
+            actionBtn.innerText = 'พักการทำงาน';
+            actionBtn.onclick = () => stopBot(id);
+          } else {
+            actionBtn.className = 'btn-act btn-start';
+            actionBtn.innerText = 'เริ่มทำงาน';
+            actionBtn.onclick = () => startBot(id);
+          }
+
+          // Populate Config Inputs if not focused
+          const lockInput = document.getElementById('cfg-lockmap-' + id);
+          const sellInput = document.getElementById('cfg-sell-' + id);
+          const storeInput = document.getElementById('cfg-store-' + id);
+          
+          if (lockInput && document.activeElement !== lockInput && b.lock_map) {
+            if (!lockInput.dataset.loaded) {
+              lockInput.value = b.lock_map;
+              lockInput.dataset.loaded = "1";
+            }
+          }
+          if (sellInput && document.activeElement !== sellInput && b.npc_sell) {
+            if (!sellInput.dataset.loaded) {
+              sellInput.value = b.npc_sell;
+              sellInput.dataset.loaded = "1";
+            }
+          }
+          if (storeInput && document.activeElement !== storeInput && b.npc_store) {
+            if (!storeInput.dataset.loaded) {
+              storeInput.value = b.npc_store;
+              storeInput.dataset.loaded = "1";
+            }
+          }
+        });
+      } catch (err) {
+        console.error("Fetch status error:", err);
+      }
+    }
+
+    async function startBot(id) {
+      await fetch('/api/bots/start?id=' + encodeURIComponent(id));
+      updateDashboard();
+    }
+
+    async function stopBot(id) {
+      await fetch('/api/bots/stop?id=' + encodeURIComponent(id));
+      updateDashboard();
+    }
+
+    async function deleteProfile(id) {
+      if (confirm('ยืนยันลบโปรไฟล์ ' + id + ' หรือไม่คะ?')) {
+        await fetch('/api/profiles/delete?id=' + encodeURIComponent(id));
+        const card = document.getElementById('bot-card-' + id);
+        if (card) card.remove();
+        updateDashboard();
+      }
+    }
+
+    function openAddModal() {
+      document.getElementById('addModal').style.display = 'flex';
+    }
+
+    function closeAddModal() {
+      document.getElementById('addModal').style.display = 'none';
+    }
+
+    async function saveProfile(e) {
+      e.preventDefault();
+      const payload = {
+        name: document.getElementById('pName').value,
+        username: document.getElementById('pUser').value,
+        password: document.getElementById('pPass').value,
+        char_slot: parseInt(document.getElementById('pSlot').value) || 0,
+        lock_map: document.getElementById('pMap').value || "pay_dun00",
+        enabled: true
+      };
+
+      const res = await fetch('/api/profiles/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        closeAddModal();
+        document.getElementById('profileForm').reset();
+        updateDashboard();
+      }
+    }
+
+    // Refresh every 800ms
+    updateDashboard();
+    setInterval(updateDashboard, 800);
+  </script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Secrets & Profiles (ป้องกันรหัสผ่านหลุดขึ้น Git เด็ดขาด)
+profiles/*.json
+!profiles/_base.json
+
+# Scratch & Logs
+scratch/
+*.log
+
+# OS artifacts
+.DS_Store
+Thumbs.db

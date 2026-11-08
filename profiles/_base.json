@@ -1,0 +1,12 @@
+{
+  "id": "_base",
+  "name": "Base Template",
+  "username": "",
+  "password": "",
+  "char_slot": 0,
+  "lock_map": "pay_dun00",
+  "auto_hunt": true,
+  "return_weight": 50,
+  "min_hp_potion": 10,
+  "enabled": true
+}
