@@ -88,9 +88,8 @@ func (m *BotManager) LoadAllProfiles() error {
 		}
 		var p Profile
 		if err := json.Unmarshal(data, &p); err == nil {
-			if p.ID == "" {
-				p.ID = strings.TrimSuffix(e.Name(), ".json")
-			}
+			// บังคับให้ Profile ID ยึดตามชื่อไฟล์เสมอ ป้องกันกรณีก๊อปปี้ไฟล์แล้ว ID ชนกันใน Map
+			p.ID = strings.TrimSuffix(e.Name(), ".json")
 			m.mergeWithBase(&p)
 			m.Profiles[p.ID] = p
 		}
@@ -115,7 +114,15 @@ func (m *BotManager) SaveProfile(p Profile) error {
 	defer m.mu.Unlock()
 
 	if p.ID == "" {
-		p.ID = strings.ToLower(strings.ReplaceAll(p.Username, " ", "_"))
+		baseID := strings.ToLower(strings.ReplaceAll(p.Username, " ", "_"))
+		if baseID == "" {
+			baseID = strings.ToLower(strings.ReplaceAll(p.Name, " ", "_"))
+		}
+		if p.CharSlot > 0 {
+			p.ID = fmt.Sprintf("%s_slot%d", baseID, p.CharSlot)
+		} else {
+			p.ID = baseID
+		}
 	}
 	m.mergeWithBase(&p)
 	m.Profiles[p.ID] = p

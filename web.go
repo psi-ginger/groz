@@ -113,6 +113,9 @@ func handleAPISaveProfile(w http.ResponseWriter, r *http.Request) {
 
 	if globalMgr != nil {
 		_ = globalMgr.SaveProfile(p)
+		if p.Enabled {
+			_ = globalMgr.StartBot(p.ID)
+		}
 	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
