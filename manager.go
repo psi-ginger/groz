@@ -23,6 +23,8 @@ type Profile struct {
 	AutoHunt     bool   `json:"auto_hunt"`
 	ReturnWeight int    `json:"return_weight"`
 	MinHPPotion  int    `json:"min_hp_potion"`
+	AutoStat     string `json:"auto_stat"`
+	AutoSkill    string `json:"auto_skill"`
 	Enabled      bool   `json:"enabled"`
 }
 
@@ -126,7 +128,7 @@ func (m *BotManager) SaveProfile(p Profile) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-func (m *BotManager) UpdateQuickSettings(id, lockMap, npcSell, npcStore string) error {
+func (m *BotManager) UpdateQuickSettings(id, lockMap, npcSell, npcStore, autoStat, autoSkill string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -137,6 +139,8 @@ func (m *BotManager) UpdateQuickSettings(id, lockMap, npcSell, npcStore string) 
 	p.LockMap = strings.TrimSpace(lockMap)
 	p.NPCSell = strings.TrimSpace(npcSell)
 	p.NPCStore = strings.TrimSpace(npcStore)
+	p.AutoStat = strings.TrimSpace(autoStat)
+	p.AutoSkill = strings.TrimSpace(autoSkill)
 	m.Profiles[id] = p
 
 	data, err := json.MarshalIndent(p, "", "  ")
@@ -148,9 +152,11 @@ func (m *BotManager) UpdateQuickSettings(id, lockMap, npcSell, npcStore string) 
 		return err
 	}
 
-	// ถ้าบอทกำลังรันอยู่ ปรับ LockMap ทันทีในหน่วยความจำ
+	// ถ้าบอทกำลังรันอยู่ ปรับค่าทันทีในหน่วยความจำ
 	if bot, running := m.Bots[id]; running && bot != nil {
 		bot.LockMap = p.LockMap
+		bot.AutoStat = p.AutoStat
+		bot.AutoSkill = p.AutoSkill
 	}
 	return nil
 }
@@ -286,6 +292,8 @@ func (m *BotManager) GetAllStatuses() []BotStatusJSON {
 				LockMap:     p.LockMap,
 				NPCSell:     p.NPCSell,
 				NPCStore:    p.NPCStore,
+				AutoStat:    p.AutoStat,
+				AutoSkill:   p.AutoSkill,
 			})
 			continue
 		}
@@ -351,6 +359,8 @@ func (m *BotManager) GetAllStatuses() []BotStatusJSON {
 			LockMap:     p.LockMap,
 			NPCSell:     p.NPCSell,
 			NPCStore:    p.NPCStore,
+			AutoStat:    p.AutoStat,
+			AutoSkill:   p.AutoSkill,
 		})
 	}
 	return list

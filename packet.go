@@ -259,3 +259,29 @@ func BuildUseItem(index uint16) []byte {
 func BuildRestart(respawnType byte) []byte {
 	return []byte{0xB2, 0x00, respawnType}
 }
+
+const (
+	StatSTR = 13 // 0x0D
+	StatAGI = 14 // 0x0E
+	StatVIT = 15 // 0x0F
+	StatINT = 16 // 0x10
+	StatDEX = 17 // 0x11
+	StatLUK = 18 // 0x12
+)
+
+// BuildAddStatus (0x00BB CZ_STATUS_CHANGE: 5 bytes: 2B header + 2B statID + 1B amount)
+func BuildAddStatus(statID uint16) []byte {
+	pkt := make([]byte, 5)
+	binary.LittleEndian.PutUint16(pkt[0:2], 0x00BB)
+	binary.LittleEndian.PutUint16(pkt[2:4], statID)
+	pkt[4] = 1
+	return pkt
+}
+
+// BuildAddSkill (0x0112 CZ_UPGRADE_SKILLLEVEL: 4 bytes: 2B header + 2B skillID)
+func BuildAddSkill(skillID uint16) []byte {
+	pkt := make([]byte, 4)
+	binary.LittleEndian.PutUint16(pkt[0:2], 0x0112)
+	binary.LittleEndian.PutUint16(pkt[2:4], skillID)
+	return pkt
+}

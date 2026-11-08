@@ -8,5 +8,7 @@
   "auto_hunt": true,
   "return_weight": 50,
   "min_hp_potion": 10,
+  "auto_stat": "",
+  "auto_skill": "",
   "enabled": true
 }

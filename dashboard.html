@@ -204,6 +204,14 @@
             <span class="cfg-label">NPC ฝากคลัง (Store):</span>
             <input class="cfg-input" id="cfg-store-${id}" placeholder="เช่น payon 180, 100">
           </div>
+          <div class="cfg-row">
+            <span class="cfg-label">Auto Status:</span>
+            <input class="cfg-input" id="cfg-stat-${id}" placeholder="เช่น int 99, dex 80, vit 30">
+          </div>
+          <div class="cfg-row">
+            <span class="cfg-label">Auto Skill (ID):</span>
+            <input class="cfg-input" id="cfg-skill-${id}" placeholder="เช่น 1 9, 19 10, 20 10">
+          </div>
           <div class="cfg-footer">
             <span class="cfg-status" id="cfg-status-${id}"></span>
             <button class="btn-save" onclick="saveQuickConfig('${id}')">บันทึกค่า</button>
@@ -224,6 +232,8 @@
       const lockMap = document.getElementById('cfg-lockmap-' + id).value;
       const npcsell = document.getElementById('cfg-sell-' + id).value;
       const npcstore = document.getElementById('cfg-store-' + id).value;
+      const autoStat = document.getElementById('cfg-stat-' + id).value;
+      const autoSkill = document.getElementById('cfg-skill-' + id).value;
       const statusElem = document.getElementById('cfg-status-' + id);
 
       try {
@@ -234,7 +244,9 @@
             id: id,
             lock_map: lockMap,
             npc_sell: npcsell,
-            npc_store: npcstore
+            npc_store: npcstore,
+            auto_stat: autoStat,
+            auto_skill: autoSkill
           })
         });
         if (res.ok) {
@@ -431,6 +443,8 @@
           const lockInput = document.getElementById('cfg-lockmap-' + id);
           const sellInput = document.getElementById('cfg-sell-' + id);
           const storeInput = document.getElementById('cfg-store-' + id);
+          const statInput = document.getElementById('cfg-stat-' + id);
+          const skillInput = document.getElementById('cfg-skill-' + id);
           
           if (lockInput && document.activeElement !== lockInput && b.lock_map) {
             if (!lockInput.dataset.loaded) {
@@ -448,6 +462,18 @@
             if (!storeInput.dataset.loaded) {
               storeInput.value = b.npc_store;
               storeInput.dataset.loaded = "1";
+            }
+          }
+          if (statInput && document.activeElement !== statInput && b.auto_stat) {
+            if (!statInput.dataset.loaded) {
+              statInput.value = b.auto_stat;
+              statInput.dataset.loaded = "1";
+            }
+          }
+          if (skillInput && document.activeElement !== skillInput && b.auto_skill) {
+            if (!skillInput.dataset.loaded) {
+              skillInput.value = b.auto_skill;
+              skillInput.dataset.loaded = "1";
             }
           }
         });

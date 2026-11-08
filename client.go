@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -77,6 +78,8 @@ type BotClient struct {
 	IsDead         bool
 	AutoHuntActive bool
 	LastGPSMove    time.Time
+	AutoStat       string
+	AutoSkill      string
 }
 
 func NewBotClient(cfg Config) *BotClient {
@@ -113,6 +116,8 @@ func NewBotClientFromProfile(p Profile) *BotClient {
 		LockMap:       lockMap,
 		Router:        router,
 		PacketLengths: pktLens,
+		AutoStat:      p.AutoStat,
+		AutoSkill:     p.AutoSkill,
 	}
 	c.Inventory = NewInventoryManager()
 	c.Trade = NewTradeManager(c)
@@ -360,6 +365,57 @@ func (c *BotClient) triggerAutoHunt() error {
 	return nil
 }
 
+func (c *BotClient) checkAutoStatAndSkill() {
+	if c.AutoStat == "" && c.AutoSkill == "" {
+		return
+	}
+
+	// 1. Auto Status (รูปแบบเช่น "int 99, dex 80, vit 30")
+	if c.AutoStat != "" {
+		entries := strings.Split(c.AutoStat, ",")
+		for _, entry := range entries {
+			parts := strings.Fields(strings.TrimSpace(entry))
+			if len(parts) >= 2 {
+				name := strings.ToLower(parts[0])
+				target, _ := strconv.Atoi(parts[1])
+				var statID uint16
+				switch name {
+				case "str":
+					statID = StatSTR
+				case "agi":
+					statID = StatAGI
+				case "vit":
+					statID = StatVIT
+				case "int":
+					statID = StatINT
+				case "dex":
+					statID = StatDEX
+				case "luk":
+					statID = StatLUK
+				}
+				if statID > 0 && target > 0 {
+					c.sendMapPacket(BuildAddStatus(statID))
+					break
+				}
+			}
+		}
+	}
+
+	// 2. Auto Skill (รูปแบบเช่น "1 9, 19 10, 20 10" หรือ "19, 20")
+	if c.AutoSkill != "" {
+		entries := strings.Split(c.AutoSkill, ",")
+		for _, entry := range entries {
+			parts := strings.Fields(strings.TrimSpace(entry))
+			if len(parts) >= 1 {
+				skid, _ := strconv.Atoi(parts[0])
+				if skid > 0 {
+					c.sendMapPacket(BuildAddSkill(uint16(skid)))
+				}
+			}
+		}
+	}
+}
+
 func (c *BotClient) maintainMapConnection() {
 	c.Running = true
 	defer func() { c.Running = false }()
@@ -386,6 +442,9 @@ func (c *BotClient) maintainMapConnection() {
 					pingPkt := BuildRozPacket(OpPing, "")
 					c.sendMapPacket(pingPkt)
 				}
+
+				// 3. ตรวจสอบอัพสเตตัสและสกิลอัตโนมัติตามที่พี่แมวตั้งค่า
+				c.checkAutoStatAndSkill()
 			}
 		}
 	}()
