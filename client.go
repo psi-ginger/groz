@@ -1049,15 +1049,18 @@ func (c *BotClient) maintainMapConnection() {
 				continue
 			}
 
-			// --- [🎒 Inventory Packets: Non-Stackable Equipments / Cards (0x0B0A, 0x0A0D, 0x0992, 0x0901, 0x02D0)] ---
-			if (pktID == 0x0B0A || pktID == 0x0A0D || pktID == 0x0992 || pktID == 0x0901 || pktID == 0x02D0 || pktID == 0x0295 || pktID == 0x00A4) && offset+4 <= len(data) {
+			// --- [🎒 Inventory Packets: Non-Stackable Equipments / Cards (0x0B39, 0x0B0A, 0x0A0D, 0x0992, 0x0901, 0x02D0)] ---
+			if (pktID == 0x0B39 || pktID == 0x0B0A || pktID == 0x0A0D || pktID == 0x0992 || pktID == 0x0901 || pktID == 0x02D0 || pktID == 0x0295 || pktID == 0x00A4) && offset+4 <= len(data) {
 				pLen := int(binary.LittleEndian.Uint16(data[offset+2 : offset+4]))
 				if pLen < 4 || offset+pLen > len(data) {
 					break
 				}
 				itemStart := offset + 4
 				itemSize := 20
-				if pktID == 0x0B0A {
+				if pktID == 0x0B39 {
+					itemStart = offset + 5 // 0x0B39 มีไบต์ Type คั่นที่ offset+4, ข้อมูลไอเทมเริ่มที่ offset+5
+					itemSize = 68          // Type9 (Len 68): ID(2), nameID(4), type(1), type_equip(4), equipped(4), cards(16), expire(4)...
+				} else if pktID == 0x0B0A {
 					itemStart = offset + 5 // 0x0B0A มีไบต์ Type คั่นที่ offset+4, ข้อมูลไอเทมเริ่มที่ offset+5
 					itemSize = 67          // Modern 2025: ID(2), nameID(4), type(1), type_equip(4), equipped(4)...
 				} else if pktID == 0x0A0D {
@@ -1078,7 +1081,7 @@ func (c *BotClient) maintainMapConnection() {
 					var itemType byte
 					var equipped uint16
 
-					if pktID == 0x0B0A {
+					if pktID == 0x0B39 || pktID == 0x0B0A {
 						nameID = uint16(binary.LittleEndian.Uint32(itemBytes[i+2 : i+6]))
 						itemType = itemBytes[i+6]
 						equipped = uint16(binary.LittleEndian.Uint32(itemBytes[i+11 : i+15]))
