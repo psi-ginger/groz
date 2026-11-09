@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -18,61 +21,69 @@ type Item struct {
 	Identified bool   // ส่องแว่นขยายแล้วหรือไม่
 }
 
-// ItemWhitelist ตารางไอเทมคุ้มครอง (ห้ามโยนให้แม่ค้า)
-type ItemWhitelist struct {
-	mu      sync.RWMutex
-	KeepIDs map[uint16]bool
+// TradeConfig โครงสร้างไฟล์ trade_config.json สำหรับกำหนดไอเทมเสบียงที่จะเก็บติดตัว
+type TradeConfig struct {
+	mu        sync.RWMutex
+	KeepItems map[string]int `json:"keep_items"`
 }
 
-func NewDefaultWhitelist() *ItemWhitelist {
-	wl := &ItemWhitelist{
-		KeepIDs: make(map[uint16]bool),
+// DefaultTradeConfig ค่าเริ่มต้นหากยังไม่มีไฟล์
+func DefaultTradeConfig() *TradeConfig {
+	return &TradeConfig{
+		KeepItems: map[string]int{
+			"501":  20,
+			"601":  10,
+			"602":  5,
+			"1750": 500,
+		},
 	}
-	// ไอเทมจำเป็นพื้นฐาน
-	wl.KeepIDs[501] = true  // Red Potion
-	wl.KeepIDs[502] = true  // Orange Potion
-	wl.KeepIDs[503] = true  // Yellow Potion
-	wl.KeepIDs[504] = true  // White Potion
-	wl.KeepIDs[505] = true  // Blue Potion
-	wl.KeepIDs[506] = true  // Green Potion
-	wl.KeepIDs[601] = true  // Fly Wing
-	wl.KeepIDs[602] = true  // Butterfly Wing
-	wl.KeepIDs[611] = true  // Magnifier (แว่นขยาย)
-	wl.KeepIDs[645] = true  // Concentration Potion
-	wl.KeepIDs[656] = true  // Awakening Potion
-	wl.KeepIDs[657] = true  // Berserk Potion
-	wl.KeepIDs[1750] = true // Arrow (ลูกธนูธรรมดา)
-	wl.KeepIDs[1751] = true // Silver Arrow
-	wl.KeepIDs[1752] = true // Fire Arrow
-	wl.KeepIDs[1753] = true // Iron Arrow
-	wl.KeepIDs[1754] = true // Wind Arrow
-	wl.KeepIDs[1755] = true // Stone Arrow
-	wl.KeepIDs[1756] = true // Crystal Arrow
-	wl.KeepIDs[7033] = true // Novice Potion
-	return wl
 }
 
-func (w *ItemWhitelist) IsProtected(item *Item) bool {
-	if item == nil {
-		return true
+// LoadTradeConfig โหลดการตั้งค่าจาก trade_config.json (สร้างใหม่อัตโนมัติหากยังไม่มี)
+func LoadTradeConfig(filePath string) *TradeConfig {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		cfg := DefaultTradeConfig()
+		if out, errM := json.MarshalIndent(cfg, "", "  "); errM == nil {
+			_ = os.WriteFile(filePath, out, 0644)
+		}
+		return cfg
 	}
-	// ถ้าสวมใส่อยู่ ห้ามเทรดเด็ดขาด
-	if item.Equipped > 0 {
-		return true
+	var cfg TradeConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return DefaultTradeConfig()
 	}
-	// อุปกรณ์สวมใส่ (Type 3), อาวุธ (Type 4), การ์ด (Type 5) ห้ามเทรดทิ้ง
-	if item.Type == 3 || item.Type == 4 || item.Type == 5 {
-		return true
+	if cfg.KeepItems == nil {
+		cfg.KeepItems = make(map[string]int)
 	}
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-	return w.KeepIDs[item.NameID]
+	return &cfg
 }
 
-func (w *ItemWhitelist) AddProtectedID(nameID uint16) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.KeepIDs[nameID] = true
+func (cfg *TradeConfig) GetKeepAmount(nameID uint16) (int, bool) {
+	if cfg == nil {
+		return 0, false
+	}
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	if cfg.KeepItems == nil {
+		return 0, false
+	}
+	key := strconv.Itoa(int(nameID))
+	amt, exists := cfg.KeepItems[key]
+	return amt, exists
+}
+
+func (cfg *TradeConfig) AddKeepItem(nameID uint16, amount int) {
+	if cfg == nil {
+		return
+	}
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+	if cfg.KeepItems == nil {
+		cfg.KeepItems = make(map[string]int)
+	}
+	key := strconv.Itoa(int(nameID))
+	cfg.KeepItems[key] = amount
 }
 
 // InventoryManager ดูแลกระเป๋าและสิ่งของในตัวบอท
@@ -133,16 +144,50 @@ func (inv *InventoryManager) FindItemIndex(nameID uint16) (uint16, bool) {
 	return 0, false
 }
 
-// GetItemsToTrade คืนรายการไอเทมขยะที่ต้องเทรดให้แม่ค้า (ไม่รวมของใน Whitelist และของสวมใส่)
-func (inv *InventoryManager) GetItemsToTrade(wl *ItemWhitelist) []*Item {
+// GetItemsToTrade คืนรายการไอเทมที่จะเทรดให้แม่ค้า (เทรดหมดทุกช่อง ยกเว้นของสวมใส่และเสบียงตามโควตาใน trade_config.json)
+func (inv *InventoryManager) GetItemsToTrade(cfg *TradeConfig) []*Item {
 	inv.mu.RLock()
 	defer inv.mu.RUnlock()
 
 	var list []*Item
 	for _, it := range inv.Items {
-		if !wl.IsProtected(it) && it.Amount > 0 {
-			list = append(list, it)
+		if it == nil || it.Amount <= 0 {
+			continue
 		}
+		// 1. ถ้าสวมใส่อยู่ในตัว ห้ามเทรดเด็ดขาด
+		if it.Equipped > 0 {
+			continue
+		}
+
+		// 2. เช็คโควตาใน keep_items
+		if cfg != nil {
+			keepAmt, exists := cfg.GetKeepAmount(it.NameID)
+			if exists {
+				// ถ้ามีอยู่ในรายการเก็บ และจำนวนในตัวมากกว่าโควตา ให้เทรดส่วนเกิน
+				excess := it.Amount - keepAmt
+				if excess > 0 {
+					list = append(list, &Item{
+						Index:      it.Index,
+						NameID:     it.NameID,
+						Amount:     excess,
+						Type:       it.Type,
+						Equipped:   it.Equipped,
+						Identified: it.Identified,
+					})
+				}
+				continue
+			}
+		}
+
+		// 3. ของอื่นๆ ทั้งหมดทุกช่อง (การ์ด, ขยะมอนสเตอร์, อาวุธ/ชุดเกราะที่ดรอป) -> เทรดหมดเกลี้ยง!
+		list = append(list, &Item{
+			Index:      it.Index,
+			NameID:     it.NameID,
+			Amount:     it.Amount,
+			Type:       it.Type,
+			Equipped:   it.Equipped,
+			Identified: it.Identified,
+		})
 	}
 	return list
 }
@@ -164,15 +209,16 @@ const (
 
 // TradeManager คลาสควบคุมการเดินทางกลับเมืองและดีลกับแม่ค้าตาม Step 1-5
 type TradeManager struct {
-	mu        sync.RWMutex
-	Client    *BotClient
-	Whitelist *ItemWhitelist
+	mu         sync.RWMutex
+	Client     *BotClient
+	Config     *TradeConfig
+	ConfigFile string
 
-	MerchantName  string
-	MerchantGID   uint32
-	MerchantMap   string
-	MerchantX     int
-	MerchantY     int
+	MerchantName string
+	MerchantGID  uint32
+	MerchantMap  string
+	MerchantX    int
+	MerchantY    int
 
 	State            TradeState
 	PendingTradeList []*Item
@@ -181,19 +227,30 @@ type TradeManager struct {
 	DealActive       bool
 
 	// ค่าควบคุม Restock
-	MinHPPotions    int    // เช่น ขั้นต่ำ 20 ขวด
-	MinArrows       int    // เช่น ขั้นต่ำ 500 ดอก
+	MinHPPotions    int // เช่น ขั้นต่ำ 20 ขวด
+	MinArrows       int // เช่น ขั้นต่ำ 500 ดอก
 	RestockRequired bool
 }
 
 func NewTradeManager(client *BotClient) *TradeManager {
+	cfgFile := "trade_config.json"
 	return &TradeManager{
 		Client:       client,
-		Whitelist:    NewDefaultWhitelist(),
+		ConfigFile:   cfgFile,
+		Config:       LoadTradeConfig(cfgFile),
 		State:        TradeIdle,
 		MinHPPotions: 20,
 		MinArrows:    500,
 	}
+}
+
+func (tm *TradeManager) ReloadConfig() {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if tm.ConfigFile == "" {
+		tm.ConfigFile = "trade_config.json"
+	}
+	tm.Config = LoadTradeConfig(tm.ConfigFile)
 }
 
 // Step 1: ตรวจสอบน้ำหนัก และคำนวณจำนวนรอบดีล (รอบละไม่เกิน 10 ชนิด)
@@ -232,6 +289,7 @@ func (tm *TradeManager) CheckWeightAndReturn() bool {
 
 // Step 2: ดีลแม่ค้า & หน่วงเวลา 3 วินาที
 func (tm *TradeManager) StartDealSession(merchantGID uint32) {
+	tm.ReloadConfig()
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 
@@ -240,12 +298,12 @@ func (tm *TradeManager) StartDealSession(merchantGID uint32) {
 	tm.DealActive = false
 	tm.State = TradeDealInitiating
 
-	// ดึงรายการขยะที่จะเทรด
-	tm.PendingTradeList = tm.Client.Inventory.GetItemsToTrade(tm.Whitelist)
+	// ดึงรายการของที่จะเทรดตาม config
+	tm.PendingTradeList = tm.Client.Inventory.GetItemsToTrade(tm.Config)
 	totalItems := len(tm.PendingTradeList)
 	totalRounds := int(math.Ceil(float64(totalItems) / 10.0))
 
-	fmt.Printf("[🤝 Trade] ยื่นดีลแม่ค้า (GID: %d) | ขยะทั้งหมด %d ชนิด (ต้องดีล %d รอบ)\n",
+	fmt.Printf("[🤝 Trade] ยื่นดีลแม่ค้า (GID: %d) | ของทั้งหมด %d ชนิด (ต้องดีล %d รอบ)\n",
 		merchantGID, totalItems, totalRounds)
 
 	// ส่งคำขอดีล (0x00E4)
@@ -295,9 +353,9 @@ func (tm *TradeManager) ExecuteTradeStep3And4() {
 		time.Sleep(1 * time.Second) // รอให้แม่ค้าย้ายของใส่หน้าต่างดีล
 	}
 
-	// ถ้า PendingTradeList ยังว่างอยู่ ให้ดึงไอเทมขยะที่เทรดได้ทั้งหมดจากกระเป๋า
+	// ถ้า PendingTradeList ยังว่างอยู่ ให้ดึงไอเทมที่จะเทรดทั้งหมดจากกระเป๋าตาม config
 	if len(tm.PendingTradeList) == 0 {
-		tm.PendingTradeList = tm.Client.Inventory.GetItemsToTrade(tm.Whitelist)
+		tm.PendingTradeList = tm.Client.Inventory.GetItemsToTrade(tm.Config)
 	}
 
 	// Step 4: โอนขยะไม่เกิน 10 ชนิด
@@ -369,8 +427,8 @@ func (tm *TradeManager) HandleDealComplete() {
 		merchant = tm.Client.MerchantName
 	}
 
-	// ตรวจสอบไอเทมขยะที่ยังหลงเหลืออยู่ในกระเป๋า
-	remaining := tm.Client.Inventory.GetItemsToTrade(tm.Whitelist)
+	// ตรวจสอบไอเทมที่ยังหลงเหลืออยู่ในกระเป๋า
+	remaining := tm.Client.Inventory.GetItemsToTrade(tm.Config)
 	if len(remaining) > 0 {
 		tm.PendingTradeList = remaining
 		tm.State = TradeDealInitiating
