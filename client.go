@@ -713,6 +713,15 @@ func (c *BotClient) maintainMapConnection() {
 						if DebugMovement {
 							fmt.Printf("\n[🤝 Merchant] ยืนอยู่หน้าแม่ค้า %s แล้ว ที่ (%d, %d)\n", c.MerchantName, c.CurrentX, c.CurrentY)
 						}
+
+						// ส่ง PM หาแม่ค้าเพื่อเรียกให้เริ่มดีล (ส่งทุก 5 วินาทีหากยังไม่ได้ดีล)
+						if c.Trade != nil && !c.Trade.IsActive() && c.MerchantName != "" {
+							if time.Since(c.LastGPSMove) >= 5*time.Second {
+								c.LastGPSMove = time.Now()
+								fmt.Printf("[💬 Whisper] ยืนข้างแม่ค้าแล้ว -> ส่งข้อความหา %s: deal\n", c.MerchantName)
+								c.SendPM(c.MerchantName, "deal")
+							}
+						}
 						time.Sleep(1 * time.Second)
 						continue
 					}
@@ -852,6 +861,80 @@ func (c *BotClient) maintainMapConnection() {
 				}
 				offset += 13
 				continue
+			}
+
+			// --- [🤝 Deal / Exchange Packets] ---
+			if pktID == 0x00E5 && offset+26 <= len(data) {
+				// ZC_REQ_EXCHANGE (26 bytes): มีคนขอดีลมา!
+				senderName := string(bytes.Trim(data[offset+2:offset+26], "\x00"))
+				fmt.Printf("\n[🤝 Deal Request] ตัวละคร '%s' ส่งคำขอดีลมา! กำลังกดตอบตกลง (0x00E6 0)...\n", senderName)
+				_ = c.sendMapPacket(BuildDealReply(0)) // กดตอบตกลงทันที
+				if c.Trade != nil {
+					c.Trade.DealActive = true
+					c.Trade.State = TradeDealWaitingHandshake
+				}
+				offset += 26
+				continue
+			}
+			if pktID == 0x00E7 && offset+3 <= len(data) {
+				// ZC_ACK_EXCHANGE (3 bytes): หน้าต่างดีลเปิดเรียบร้อย
+				res := data[offset+2]
+				if res == 0 && c.Trade != nil {
+					c.Trade.HandleDealBegin()
+				}
+				offset += 3
+				continue
+			}
+			if pktID == 0x00EC && offset+3 <= len(data) {
+				// ZC_CONCLUDE_EXCHANGE (3 bytes): อีกฝ่ายกด Lock ดีลแล้ว
+				if c.Trade != nil {
+					c.Trade.HandleDealOtherLocked()
+				}
+				offset += 3
+				continue
+			}
+			if pktID == 0x00EE && offset+2 <= len(data) {
+				// ZC_COMPLETE_EXCHANGE (2 bytes): ดีลสำเร็จสมบูรณ์!
+				if c.Trade != nil {
+					c.Trade.HandleDealComplete()
+				}
+				offset += 2
+				continue
+			}
+			if pktID == 0x00EF && offset+2 <= len(data) {
+				// ZC_CANCEL_EXCHANGE (2 bytes): ดีลถูกยกเลิก
+				if c.Trade != nil {
+					c.Trade.HandleDealCancel()
+				}
+				offset += 2
+				continue
+			}
+
+			// --- [🎒 Inventory Packets] ---
+			if pktID == 0x01EE && offset+4 <= len(data) {
+				// ZC_INVENTORY_EXPAND_NORMAL (Variable Len): ข้อมูลไอเทมในกระเป๋า
+				pLen := int(binary.LittleEndian.Uint16(data[offset+2 : offset+4]))
+				if offset+pLen <= len(data) {
+					itemBytes := data[offset+4 : offset+pLen]
+					itemSize := 18
+					for i := 0; i+itemSize <= len(itemBytes); i += itemSize {
+						idx := binary.LittleEndian.Uint16(itemBytes[i : i+2])
+						nameID := binary.LittleEndian.Uint16(itemBytes[i+2 : i+4])
+						itemType := itemBytes[i+4]
+						amount := int(binary.LittleEndian.Uint16(itemBytes[i+6 : i+8]))
+						if c.Inventory != nil {
+							c.Inventory.SetItem(&Item{
+								Index:      idx,
+								NameID:     nameID,
+								Amount:     amount,
+								Type:       itemType,
+								Identified: true,
+							})
+						}
+					}
+					offset += pLen
+					continue
+				}
 			}
 			if pktID == 0x0A18 && offset+14 <= len(data) {
 				// ZC_ACCEPT_ENTER3: 14 bytes
