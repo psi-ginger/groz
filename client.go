@@ -939,17 +939,30 @@ func (c *BotClient) maintainMapConnection() {
 			}
 
 			// --- [🎒 Inventory Packets] ---
-			if pktID == 0x01EE && offset+4 <= len(data) {
-				// ZC_INVENTORY_EXPAND_NORMAL (Variable Len): ข้อมูลไอเทมในกระเป๋า
+			if (pktID == 0x01EE || pktID == 0x02E8 || pktID == 0x0991) && offset+4 <= len(data) {
+				// ข้อมูลไอเทมทั้งหมดในกระเป๋า (0x0991 ขนาด 24B, 0x02E8 ขนาด 22B, 0x01EE ขนาด 18B)
 				pLen := int(binary.LittleEndian.Uint16(data[offset+2 : offset+4]))
 				if offset+pLen <= len(data) {
 					itemBytes := data[offset+4 : offset+pLen]
 					itemSize := 18
+					if pktID == 0x02E8 {
+						itemSize = 22
+					} else if pktID == 0x0991 {
+						itemSize = 24
+					}
+					itemCount := 0
 					for i := 0; i+itemSize <= len(itemBytes); i += itemSize {
 						idx := binary.LittleEndian.Uint16(itemBytes[i : i+2])
 						nameID := binary.LittleEndian.Uint16(itemBytes[i+2 : i+4])
 						itemType := itemBytes[i+4]
-						amount := int(binary.LittleEndian.Uint16(itemBytes[i+6 : i+8]))
+						var amount int
+						if pktID == 0x0991 {
+							// 0x0991: ID(2), nameID(2), type(1), amount(2)
+							amount = int(binary.LittleEndian.Uint16(itemBytes[i+5 : i+7]))
+						} else {
+							// 0x01EE / 0x02E8: ID(2), nameID(2), type(1), identified(1), amount(2)
+							amount = int(binary.LittleEndian.Uint16(itemBytes[i+6 : i+8]))
+						}
 						if c.Inventory != nil {
 							c.Inventory.SetItem(&Item{
 								Index:      idx,
@@ -958,11 +971,45 @@ func (c *BotClient) maintainMapConnection() {
 								Type:       itemType,
 								Identified: true,
 							})
+							itemCount++
 						}
+					}
+					if itemCount > 0 {
+						fmt.Printf("[🎒 Inventory (0x%04X)] ซิงค์ข้อมูลไอเทมในกระเป๋า %d ชิ้นเรียบร้อย\n", pktID, itemCount)
 					}
 					offset += pLen
 					continue
 				}
+			}
+			if (pktID == 0x02D4 && offset+39 <= len(data)) || (pktID == 0x00A0 && offset+33 <= len(data)) {
+				// ไอเทมที่เก็บได้จากการฟาร์ม (0x02D4: 39 bytes, 0x00A0: 33 bytes)
+				pLen := 33
+				if pktID == 0x02D4 {
+					pLen = 39
+				}
+				idx := binary.LittleEndian.Uint16(data[offset+2 : offset+4])
+				amount := int(binary.LittleEndian.Uint16(data[offset+4 : offset+6]))
+				nameID := binary.LittleEndian.Uint16(data[offset+6 : offset+8])
+				itemType := data[offset+21]
+				if c.Inventory != nil {
+					// ถ้ามีอยู่แล้วให้บวกจำนวนเพิ่ม
+					c.Inventory.mu.Lock()
+					if it, exists := c.Inventory.Items[idx]; exists {
+						it.Amount += amount
+					} else {
+						c.Inventory.Items[idx] = &Item{
+							Index:      idx,
+							NameID:     nameID,
+							Amount:     amount,
+							Type:       itemType,
+							Identified: true,
+						}
+					}
+					c.Inventory.mu.Unlock()
+					fmt.Printf("[📦 Drop] เก็บไอเทมได้: ID %d (จำนวน %d ชิ้น) -> กระเป๋าอัปเดต\n", nameID, amount)
+				}
+				offset += pLen
+				continue
 			}
 			if pktID == 0x0A18 && offset+14 <= len(data) {
 				// ZC_ACCEPT_ENTER3: 14 bytes

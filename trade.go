@@ -377,6 +377,7 @@ func (tm *TradeManager) ExecuteTradeStep3And4() {
 
 	fmt.Printf("[📤 Trade Step 4] กำลังโอนไอเทมขึ้นหน้าต่างดีล %d ชนิด...\n", len(tm.CurrentBatch))
 	for _, it := range tm.CurrentBatch {
+		fmt.Printf("   -> โอนไอเทม: ID %d (จำนวน %d ชิ้น)\n", it.NameID, it.Amount)
 		tm.Client.sendMapPacket(BuildDealAddItem(it.Index, uint32(it.Amount)))
 		time.Sleep(150 * time.Millisecond) // หน่วงเล็กน้อยเพื่อความเสถียร
 	}
