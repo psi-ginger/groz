@@ -19,6 +19,7 @@ type Profile struct {
 	CharSlot     byte   `json:"char_slot"`
 	LockMap      string `json:"lock_map"`
 	MerchantName string `json:"merchant_name"`
+	MerchantGID  uint32 `json:"merchant_gid"`
 	MerchantLoc  string `json:"merchant_loc"`
 	AutoHunt     bool   `json:"auto_hunt"`
 	ReturnWeight int    `json:"return_weight"`
@@ -168,6 +169,9 @@ func (m *BotManager) UpdateQuickSettings(id, lockMap, merchantName, merchantLoc,
 		bot.AutoSkill = p.AutoSkill
 		if bot.Trade != nil {
 			bot.Trade.MerchantName = p.MerchantName
+			if p.MerchantGID > 0 {
+				bot.Trade.MerchantGID = p.MerchantGID
+			}
 		}
 	}
 	return nil

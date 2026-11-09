@@ -433,13 +433,16 @@ func (tm *TradeManager) HandleDealComplete() {
 	if len(remaining) > 0 {
 		tm.PendingTradeList = remaining
 		tm.State = TradeDealInitiating
-		rnd := rand.Intn(9000) + 1000
-		msg := fmt.Sprintf("deal %d", rnd)
-		fmt.Printf("[🔄 Trade Loop] ยังมีขยะเหลืออีก %d ชนิด! ส่ง PM '%s' หา '%s' รอ 2 วินาทีเริ่มรอบถัดไป...\n", len(remaining), msg, merchant)
-		go func(mName, pmMsg string) {
+		fmt.Printf("[🔄 Trade Loop] ยังมีขยะเหลืออีก %d ชนิด! รอ 2 วินาทีแล้วเริ่มยื่นดีลรอบถัดไปอัตโนมัติ...\n", len(remaining))
+		go func() {
 			time.Sleep(2 * time.Second)
-			tm.Client.SendPM(mName, pmMsg)
-		}(merchant, msg)
+			if tm.MerchantGID > 0 {
+				tm.StartDealSession(tm.MerchantGID)
+			} else if merchant != "" {
+				rnd := rand.Intn(9000) + 1000
+				tm.Client.SendPM(merchant, fmt.Sprintf("deal %d", rnd))
+			}
+		}()
 	} else {
 		// เคลียร์หมดเกลี้ยงแล้ว!
 		tm.PendingTradeList = nil

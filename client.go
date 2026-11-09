@@ -129,6 +129,10 @@ func NewBotClientFromProfile(p Profile) *BotClient {
 	c.Trade = NewTradeManager(c)
 	if c.Trade != nil {
 		c.Trade.MerchantName = p.MerchantName
+		c.Trade.MerchantGID = p.MerchantGID
+		if c.Trade.MerchantGID == 0 && strings.EqualFold(p.MerchantName, "Mayu") {
+			c.Trade.MerchantGID = 2900981
+		}
 	}
 	return c
 }
@@ -715,14 +719,20 @@ func (c *BotClient) maintainMapConnection() {
 							fmt.Printf("\n[🤝 Merchant] ยืนอยู่หน้าแม่ค้า %s แล้ว ที่ (%d, %d)\n", c.MerchantName, c.CurrentX, c.CurrentY)
 						}
 
-						// ส่ง PM หาแม่ค้าเพื่อเรียกให้เริ่มดีล (ส่งทุก 5 วินาทีหากยังไม่ได้ดีล พร้อมสุ่มเลขท้ายกัน anti-spam)
+						// ยื่นดีลใส่แม่ค้าทันที (Initiate Deal)
 						if c.Trade != nil && !c.Trade.IsActive() && c.MerchantName != "" {
-							if time.Since(c.LastGPSMove) >= 5*time.Second {
+							if time.Since(c.LastGPSMove) >= 3*time.Second {
 								c.LastGPSMove = time.Now()
-								rnd := rand.Intn(9000) + 1000
-								msg := fmt.Sprintf("deal %d", rnd)
-								fmt.Printf("[💬 Whisper] ยืนข้างแม่ค้าแล้ว -> ส่งข้อความหา %s: %s\n", c.MerchantName, msg)
-								c.SendPM(c.MerchantName, msg)
+								if c.Trade.MerchantGID > 0 {
+									fmt.Printf("\n[🤝 Deal Initiate] ยื่นคำขอดีลใส่แม่ค้า %s (GID: %d)...\n", c.MerchantName, c.Trade.MerchantGID)
+									c.Trade.StartDealSession(c.Trade.MerchantGID)
+								} else {
+									// หากยังไม่ทราบ GID ให้ส่ง PM เรียกเบาๆ
+									rnd := rand.Intn(9000) + 1000
+									msg := fmt.Sprintf("deal %d", rnd)
+									fmt.Printf("[💬 Whisper] ยืนข้างแม่ค้าแต่ยังไม่พบ GID -> ส่งข้อความหา %s: %s\n", c.MerchantName, msg)
+									c.SendPM(c.MerchantName, msg)
+								}
 							}
 						}
 						time.Sleep(1 * time.Second)
@@ -863,6 +873,34 @@ func (c *BotClient) maintainMapConnection() {
 					_ = c.sendMapPacket(BuildBlockingPlayCancel())
 				}
 				offset += 13
+				continue
+			}
+
+			// --- [👀 Auto-Discovery: Actor Spawn & Merchant Detection] ---
+			if (pktID == 0x09FF || pktID == 0x0857 || pktID == 0x09DD || pktID == 0x0915) && offset+4 <= len(data) {
+				pLen := int(binary.LittleEndian.Uint16(data[offset+2 : offset+4]))
+				if pLen < 4 || offset+pLen > len(data) {
+					break
+				}
+				if pLen >= 9 {
+					actorID := binary.LittleEndian.Uint32(data[offset+5 : offset+9])
+					if c.MerchantName != "" {
+						targetNames := strings.Split(c.MerchantName, ",")
+						chunk := string(data[offset+5 : offset+pLen])
+						for _, mName := range targetNames {
+							trimmed := strings.TrimSpace(mName)
+							if trimmed != "" && strings.Contains(chunk, trimmed) {
+								if c.Trade != nil && c.Trade.MerchantGID != actorID {
+									c.Trade.MerchantGID = actorID
+									c.Trade.MerchantName = trimmed
+									fmt.Printf("\n[👀 Auto-Discovery] สแกนพบแม่ค้า '%s' ในจอ! บันทึกรหัสประจำตัว (GID: %d) ทันที\n", trimmed, actorID)
+								}
+								break
+							}
+						}
+					}
+				}
+				offset += pLen
 				continue
 			}
 
