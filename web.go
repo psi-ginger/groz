@@ -37,10 +37,10 @@ type BotStatusJSON struct {
 	MaxWeight   int     `json:"max_weight"`
 	IsHunting   bool    `json:"is_hunting"`
 	StatusText  string  `json:"status_text"`
-	LockMap     string  `json:"lock_map"`
-	NPCSell     string  `json:"npc_sell"`
-	NPCStore    string  `json:"npc_store"`
-	AutoStat    string  `json:"auto_stat"`
+	LockMap      string  `json:"lock_map"`
+	MerchantName string  `json:"merchant_name"`
+	MerchantLoc  string  `json:"merchant_loc"`
+	AutoStat     string  `json:"auto_stat"`
 	AutoSkill   string  `json:"auto_skill"`
 }
 
@@ -153,12 +153,12 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 type QuickUpdateReq struct {
-	ID        string `json:"id"`
-	LockMap   string `json:"lock_map"`
-	NPCSell   string `json:"npc_sell"`
-	NPCStore  string `json:"npc_store"`
-	AutoStat  string `json:"auto_stat"`
-	AutoSkill string `json:"auto_skill"`
+	ID           string `json:"id"`
+	LockMap      string `json:"lock_map"`
+	MerchantName string `json:"merchant_name"`
+	MerchantLoc  string `json:"merchant_loc"`
+	AutoStat     string `json:"auto_stat"`
+	AutoSkill    string `json:"auto_skill"`
 }
 
 func handleAPIQuickUpdate(w http.ResponseWriter, r *http.Request) {
@@ -175,7 +175,7 @@ func handleAPIQuickUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if globalMgr != nil {
-		if err := globalMgr.UpdateQuickSettings(req.ID, req.LockMap, req.NPCSell, req.NPCStore, req.AutoStat, req.AutoSkill); err != nil {
+		if err := globalMgr.UpdateQuickSettings(req.ID, req.LockMap, req.MerchantName, req.MerchantLoc, req.AutoStat, req.AutoSkill); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

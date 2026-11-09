@@ -18,8 +18,8 @@ type Profile struct {
 	Password     string `json:"password"`
 	CharSlot     byte   `json:"char_slot"`
 	LockMap      string `json:"lock_map"`
-	NPCSell      string `json:"npc_sell"`
-	NPCStore     string `json:"npc_store"`
+	MerchantName string `json:"merchant_name"`
+	MerchantLoc  string `json:"merchant_loc"`
 	AutoHunt     bool   `json:"auto_hunt"`
 	ReturnWeight int    `json:"return_weight"`
 	MinHPPotion  int    `json:"min_hp_potion"`
@@ -135,7 +135,7 @@ func (m *BotManager) SaveProfile(p Profile) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-func (m *BotManager) UpdateQuickSettings(id, lockMap, npcSell, npcStore, autoStat, autoSkill string) error {
+func (m *BotManager) UpdateQuickSettings(id, lockMap, merchantName, merchantLoc, autoStat, autoSkill string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -144,8 +144,8 @@ func (m *BotManager) UpdateQuickSettings(id, lockMap, npcSell, npcStore, autoSta
 		return fmt.Errorf("profile '%s' not found", id)
 	}
 	p.LockMap = strings.TrimSpace(lockMap)
-	p.NPCSell = strings.TrimSpace(npcSell)
-	p.NPCStore = strings.TrimSpace(npcStore)
+	p.MerchantName = strings.TrimSpace(merchantName)
+	p.MerchantLoc = strings.TrimSpace(merchantLoc)
 	p.AutoStat = strings.TrimSpace(autoStat)
 	p.AutoSkill = strings.TrimSpace(autoSkill)
 	m.Profiles[id] = p
@@ -162,8 +162,13 @@ func (m *BotManager) UpdateQuickSettings(id, lockMap, npcSell, npcStore, autoSta
 	// ถ้าบอทกำลังรันอยู่ ปรับค่าทันทีในหน่วยความจำ
 	if bot, running := m.Bots[id]; running && bot != nil {
 		bot.LockMap = p.LockMap
+		bot.MerchantName = p.MerchantName
+		bot.MerchantLoc = p.MerchantLoc
 		bot.AutoStat = p.AutoStat
 		bot.AutoSkill = p.AutoSkill
+		if bot.Trade != nil {
+			bot.Trade.MerchantName = p.MerchantName
+		}
 	}
 	return nil
 }
@@ -296,11 +301,11 @@ func (m *BotManager) GetAllStatuses() []BotStatusJSON {
 				CurrentMap:  p.LockMap,
 				StatusText:  "⏸️ ปิดอยู่",
 				IsHunting:   false,
-				LockMap:     p.LockMap,
-				NPCSell:     p.NPCSell,
-				NPCStore:    p.NPCStore,
-				AutoStat:    p.AutoStat,
-				AutoSkill:   p.AutoSkill,
+				LockMap:      p.LockMap,
+				MerchantName: p.MerchantName,
+				MerchantLoc:  p.MerchantLoc,
+				AutoStat:     p.AutoStat,
+				AutoSkill:    p.AutoSkill,
 			})
 			continue
 		}
@@ -362,12 +367,12 @@ func (m *BotManager) GetAllStatuses() []BotStatusJSON {
 			Weight:      bot.Weight / 10,
 			MaxWeight:   bot.MaxWeight / 10,
 			IsHunting:   bot.Running,
-			StatusText:  statusText,
-			LockMap:     p.LockMap,
-			NPCSell:     p.NPCSell,
-			NPCStore:    p.NPCStore,
-			AutoStat:    p.AutoStat,
-			AutoSkill:   p.AutoSkill,
+			StatusText:   statusText,
+			LockMap:      p.LockMap,
+			MerchantName: p.MerchantName,
+			MerchantLoc:  p.MerchantLoc,
+			AutoStat:     p.AutoStat,
+			AutoSkill:    p.AutoSkill,
 		})
 	}
 	return list

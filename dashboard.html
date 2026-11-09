@@ -197,12 +197,12 @@
             <input class="cfg-input" id="cfg-lockmap-${id}" placeholder="เช่น pay_dun00">
           </div>
           <div class="cfg-row">
-            <span class="cfg-label">NPC ขายของ (Sell):</span>
-            <input class="cfg-input" id="cfg-sell-${id}" placeholder="เช่น payon 150, 120">
+            <span class="cfg-label">แม่ค้าประจำตัว (Merchant):</span>
+            <input class="cfg-input" id="cfg-merchant-name-${id}" placeholder="เช่น CatShop หรือ ชื่อตัวละครแม่ค้า">
           </div>
           <div class="cfg-row">
-            <span class="cfg-label">NPC ฝากคลัง (Store):</span>
-            <input class="cfg-input" id="cfg-store-${id}" placeholder="เช่น payon 180, 100">
+            <span class="cfg-label">จุดนัดพบแม่ค้า (Location):</span>
+            <input class="cfg-input" id="cfg-merchant-loc-${id}" placeholder="เช่น payon 150, 120">
           </div>
           <div class="cfg-row">
             <span class="cfg-label">Auto Status:</span>
@@ -230,8 +230,8 @@
 
     async function saveQuickConfig(id) {
       const lockMap = document.getElementById('cfg-lockmap-' + id).value;
-      const npcsell = document.getElementById('cfg-sell-' + id).value;
-      const npcstore = document.getElementById('cfg-store-' + id).value;
+      const merchantName = document.getElementById('cfg-merchant-name-' + id).value;
+      const merchantLoc = document.getElementById('cfg-merchant-loc-' + id).value;
       const autoStat = document.getElementById('cfg-stat-' + id).value;
       const autoSkill = document.getElementById('cfg-skill-' + id).value;
       const statusElem = document.getElementById('cfg-status-' + id);
@@ -243,8 +243,8 @@
           body: JSON.stringify({
             id: id,
             lock_map: lockMap,
-            npc_sell: npcsell,
-            npc_store: npcstore,
+            merchant_name: merchantName,
+            merchant_loc: merchantLoc,
             auto_stat: autoStat,
             auto_skill: autoSkill
           })
@@ -441,8 +441,8 @@
 
           // Populate Config Inputs if not focused
           const lockInput = document.getElementById('cfg-lockmap-' + id);
-          const sellInput = document.getElementById('cfg-sell-' + id);
-          const storeInput = document.getElementById('cfg-store-' + id);
+          const merchantNameInput = document.getElementById('cfg-merchant-name-' + id);
+          const merchantLocInput = document.getElementById('cfg-merchant-loc-' + id);
           const statInput = document.getElementById('cfg-stat-' + id);
           const skillInput = document.getElementById('cfg-skill-' + id);
           
@@ -452,16 +452,16 @@
               lockInput.dataset.loaded = "1";
             }
           }
-          if (sellInput && document.activeElement !== sellInput && b.npc_sell) {
-            if (!sellInput.dataset.loaded) {
-              sellInput.value = b.npc_sell;
-              sellInput.dataset.loaded = "1";
+          if (merchantNameInput && document.activeElement !== merchantNameInput && b.merchant_name) {
+            if (!merchantNameInput.dataset.loaded) {
+              merchantNameInput.value = b.merchant_name;
+              merchantNameInput.dataset.loaded = "1";
             }
           }
-          if (storeInput && document.activeElement !== storeInput && b.npc_store) {
-            if (!storeInput.dataset.loaded) {
-              storeInput.value = b.npc_store;
-              storeInput.dataset.loaded = "1";
+          if (merchantLocInput && document.activeElement !== merchantLocInput && b.merchant_loc) {
+            if (!merchantLocInput.dataset.loaded) {
+              merchantLocInput.value = b.merchant_loc;
+              merchantLocInput.dataset.loaded = "1";
             }
           }
           if (statInput && document.activeElement !== statInput && b.auto_stat) {

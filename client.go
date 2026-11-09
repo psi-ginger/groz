@@ -78,6 +78,8 @@ type BotClient struct {
 	IsDead         bool
 	AutoHuntActive bool
 	LastGPSMove    time.Time
+	MerchantName   string
+	MerchantLoc    string
 	AutoStat       string
 	AutoSkill      string
 }
@@ -116,11 +118,16 @@ func NewBotClientFromProfile(p Profile) *BotClient {
 		LockMap:       lockMap,
 		Router:        router,
 		PacketLengths: pktLens,
+		MerchantName:  p.MerchantName,
+		MerchantLoc:   p.MerchantLoc,
 		AutoStat:      p.AutoStat,
 		AutoSkill:     p.AutoSkill,
 	}
 	c.Inventory = NewInventoryManager()
 	c.Trade = NewTradeManager(c)
+	if c.Trade != nil {
+		c.Trade.MerchantName = p.MerchantName
+	}
 	return c
 }
 
