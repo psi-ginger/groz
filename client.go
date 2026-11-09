@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
@@ -714,12 +715,14 @@ func (c *BotClient) maintainMapConnection() {
 							fmt.Printf("\n[🤝 Merchant] ยืนอยู่หน้าแม่ค้า %s แล้ว ที่ (%d, %d)\n", c.MerchantName, c.CurrentX, c.CurrentY)
 						}
 
-						// ส่ง PM หาแม่ค้าเพื่อเรียกให้เริ่มดีล (ส่งทุก 5 วินาทีหากยังไม่ได้ดีล)
+						// ส่ง PM หาแม่ค้าเพื่อเรียกให้เริ่มดีล (ส่งทุก 5 วินาทีหากยังไม่ได้ดีล พร้อมสุ่มเลขท้ายกัน anti-spam)
 						if c.Trade != nil && !c.Trade.IsActive() && c.MerchantName != "" {
 							if time.Since(c.LastGPSMove) >= 5*time.Second {
 								c.LastGPSMove = time.Now()
-								fmt.Printf("[💬 Whisper] ยืนข้างแม่ค้าแล้ว -> ส่งข้อความหา %s: deal\n", c.MerchantName)
-								c.SendPM(c.MerchantName, "deal")
+								rnd := rand.Intn(9000) + 1000
+								msg := fmt.Sprintf("deal %d", rnd)
+								fmt.Printf("[💬 Whisper] ยืนข้างแม่ค้าแล้ว -> ส่งข้อความหา %s: %s\n", c.MerchantName, msg)
+								c.SendPM(c.MerchantName, msg)
 							}
 						}
 						time.Sleep(1 * time.Second)
@@ -867,8 +870,8 @@ func (c *BotClient) maintainMapConnection() {
 			if pktID == 0x00E5 && offset+26 <= len(data) {
 				// ZC_REQ_EXCHANGE (26 bytes): มีคนขอดีลมา!
 				senderName := string(bytes.Trim(data[offset+2:offset+26], "\x00"))
-				fmt.Printf("\n[🤝 Deal Request] ตัวละคร '%s' ส่งคำขอดีลมา! กำลังกดตอบตกลง (0x00E6 0)...\n", senderName)
-				_ = c.sendMapPacket(BuildDealReply(0)) // กดตอบตกลงทันที
+				fmt.Printf("\n[🤝 Deal Request] ตัวละคร '%s' ส่งคำขอดีลมา! กำลังกดตอบตกลง (0x00E6 3)...\n", senderName)
+				_ = c.sendMapPacket(BuildDealReply(3)) // กดตอบตกลงทันที (Action 3 = Accept Deal)
 				if c.Trade != nil {
 					c.Trade.DealActive = true
 					c.Trade.State = TradeDealWaitingHandshake
@@ -893,20 +896,33 @@ func (c *BotClient) maintainMapConnection() {
 				offset += 3
 				continue
 			}
-			if pktID == 0x00EE && offset+2 <= len(data) {
-				// ZC_COMPLETE_EXCHANGE (2 bytes): ดีลสำเร็จสมบูรณ์!
-				if c.Trade != nil {
+			if pktID == 0x00F0 && offset+3 <= len(data) {
+				// ZC_EXEC_EXCHANGE (3 bytes): ดีลสำเร็จสมบูรณ์!
+				res := data[offset+2]
+				if res == 0 && c.Trade != nil {
 					c.Trade.HandleDealComplete()
 				}
-				offset += 2
+				offset += 3
 				continue
 			}
-			if pktID == 0x00EF && offset+2 <= len(data) {
+			if pktID == 0x00EE && offset+2 <= len(data) {
 				// ZC_CANCEL_EXCHANGE (2 bytes): ดีลถูกยกเลิก
 				if c.Trade != nil {
 					c.Trade.HandleDealCancel()
 				}
 				offset += 2
+				continue
+			}
+
+			// --- [🎒 Inventory Packets] ---
+			if pktID == 0x00AF && offset+6 <= len(data) {
+				// ZC_ITEM_FALL_ENTRY / inventory_item_removed (6 bytes): idx uint16, amount uint16
+				idx := binary.LittleEndian.Uint16(data[offset+2 : offset+4])
+				amount := int(binary.LittleEndian.Uint16(data[offset+4 : offset+6]))
+				if c.Inventory != nil {
+					c.Inventory.RemoveItem(idx, amount)
+				}
+				offset += 6
 				continue
 			}
 

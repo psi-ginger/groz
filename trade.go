@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -36,10 +37,17 @@ func NewDefaultWhitelist() *ItemWhitelist {
 	wl.KeepIDs[506] = true  // Green Potion
 	wl.KeepIDs[601] = true  // Fly Wing
 	wl.KeepIDs[602] = true  // Butterfly Wing
+	wl.KeepIDs[611] = true  // Magnifier (แว่นขยาย)
+	wl.KeepIDs[645] = true  // Concentration Potion
+	wl.KeepIDs[656] = true  // Awakening Potion
+	wl.KeepIDs[657] = true  // Berserk Potion
 	wl.KeepIDs[1750] = true // Arrow (ลูกธนูธรรมดา)
 	wl.KeepIDs[1751] = true // Silver Arrow
 	wl.KeepIDs[1752] = true // Fire Arrow
 	wl.KeepIDs[1753] = true // Iron Arrow
+	wl.KeepIDs[1754] = true // Wind Arrow
+	wl.KeepIDs[1755] = true // Stone Arrow
+	wl.KeepIDs[1756] = true // Crystal Arrow
 	wl.KeepIDs[7033] = true // Novice Potion
 	return wl
 }
@@ -50,6 +58,10 @@ func (w *ItemWhitelist) IsProtected(item *Item) bool {
 	}
 	// ถ้าสวมใส่อยู่ ห้ามเทรดเด็ดขาด
 	if item.Equipped > 0 {
+		return true
+	}
+	// อุปกรณ์สวมใส่ (Type 3), อาวุธ (Type 4), การ์ด (Type 5) ห้ามเทรดทิ้ง
+	if item.Type == 3 || item.Type == 4 || item.Type == 5 {
 		return true
 	}
 	w.mu.RLock()
@@ -246,18 +258,15 @@ func (tm *TradeManager) IsActive() bool {
 	return tm.DealActive || tm.State != TradeIdle
 }
 
-// เมื่อแม่ค้ารับดีล (0x00E7 ZC_REQ_EXCHANGE / deal_begin)
+// เมื่อหน้าต่างดีลเปิดเรียบร้อย (0x00E7 ZC_ACK_EXCHANGE / deal_begin)
 func (tm *TradeManager) HandleDealBegin() {
 	tm.mu.Lock()
-	if tm.State != TradeDealInitiating {
-		tm.mu.Unlock()
-		return
-	}
 	tm.DealActive = true
+	tm.OtherLocked = false
 	tm.State = TradeDealWaitingHandshake
 	tm.mu.Unlock()
 
-	fmt.Println("[🤝 Trade] แม่ค้าตอบรับดีลแล้ว! Pause 3 วินาทีตามสเต็ป 2 เพื่อให้หน้าต่างโหลดพร้อม...")
+	fmt.Println("[🤝 Trade] หน้าต่างดีลเปิดเรียบร้อยแล้ว! Pause 3 วินาทีเพื่อให้ฝั่งแม่ค้าพร้อม...")
 
 	go func() {
 		time.Sleep(3 * time.Second)
@@ -274,11 +283,21 @@ func (tm *TradeManager) ExecuteTradeStep3And4() {
 		return
 	}
 
+	merchant := tm.MerchantName
+	if merchant == "" && tm.Client != nil {
+		merchant = tm.Client.MerchantName
+	}
+
 	// Step 3: ถ้าต้องการยา/ลูกธนู ให้ PM สั่งแม่ค้า
-	if tm.RestockRequired && tm.MerchantName != "" {
-		fmt.Printf("[💬 PM Restock] กระซิบหาแม่ค้า '%s': restock\n", tm.MerchantName)
-		tm.Client.SendPM(tm.MerchantName, "restock")
+	if tm.RestockRequired && merchant != "" {
+		fmt.Printf("[💬 PM Restock] กระซิบหาแม่ค้า '%s': restock\n", merchant)
+		tm.Client.SendPM(merchant, "restock")
 		time.Sleep(1 * time.Second) // รอให้แม่ค้าย้ายของใส่หน้าต่างดีล
+	}
+
+	// ถ้า PendingTradeList ยังว่างอยู่ ให้ดึงไอเทมขยะที่เทรดได้ทั้งหมดจากกระเป๋า
+	if len(tm.PendingTradeList) == 0 {
+		tm.PendingTradeList = tm.Client.Inventory.GetItemsToTrade(tm.Whitelist)
 	}
 
 	// Step 4: โอนขยะไม่เกิน 10 ชนิด
@@ -286,6 +305,13 @@ func (tm *TradeManager) ExecuteTradeStep3And4() {
 	batchSize := 10
 	if len(tm.PendingTradeList) < batchSize {
 		batchSize = len(tm.PendingTradeList)
+	}
+
+	if batchSize == 0 {
+		fmt.Println("[ℹ️ Trade] ไม่มีไอเทมขยะที่ต้องส่งมอบในรอบนี้ กด Lock ดีลทันที")
+		tm.State = TradeWaitingLock
+		tm.Client.sendMapPacket(BuildDealFinalize())
+		return
 	}
 
 	tm.CurrentBatch = tm.PendingTradeList[:batchSize]
@@ -308,7 +334,7 @@ func (tm *TradeManager) HandleDealOtherLocked() {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 
-	if !tm.DealActive || tm.State != TradeWaitingLock {
+	if !tm.DealActive {
 		return
 	}
 
@@ -328,25 +354,46 @@ func (tm *TradeManager) HandleDealComplete() {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 
-	if !tm.DealActive && tm.State != TradeConfirming {
-		return
-	}
-
 	tm.DealActive = false
 	tm.State = TradeRoundComplete
 	fmt.Println("[🎉 Trade Complete] การแลกเปลี่ยนรอบนี้สำเร็จสมบูรณ์!")
 
-	// เช็คว่ายังมีขยะเหลือในคิวอีกหรือไม่?
-	remaining := len(tm.PendingTradeList)
-	if remaining > 0 {
-		fmt.Printf("[🔄 Trade Loop] ยังมีขยะเหลืออีก %d ชนิด! รอ 2 วินาทีแล้วเริ่มดีลรอบถัดไป...\n", remaining)
-		go func() {
+	// ตัดไอเทมที่ส่งมอบสำเร็จออกจาก Inventory ในตัวบอท
+	for _, it := range tm.CurrentBatch {
+		tm.Client.Inventory.RemoveItem(it.Index, it.Amount)
+	}
+	tm.CurrentBatch = nil
+
+	merchant := tm.MerchantName
+	if merchant == "" && tm.Client != nil {
+		merchant = tm.Client.MerchantName
+	}
+
+	// ตรวจสอบไอเทมขยะที่ยังหลงเหลืออยู่ในกระเป๋า
+	remaining := tm.Client.Inventory.GetItemsToTrade(tm.Whitelist)
+	if len(remaining) > 0 {
+		tm.PendingTradeList = remaining
+		tm.State = TradeDealInitiating
+		rnd := rand.Intn(9000) + 1000
+		msg := fmt.Sprintf("deal %d", rnd)
+		fmt.Printf("[🔄 Trade Loop] ยังมีขยะเหลืออีก %d ชนิด! ส่ง PM '%s' หา '%s' รอ 2 วินาทีเริ่มรอบถัดไป...\n", len(remaining), msg, merchant)
+		go func(mName, pmMsg string) {
 			time.Sleep(2 * time.Second)
-			tm.StartDealSession(tm.MerchantGID)
-		}()
+			tm.Client.SendPM(mName, pmMsg)
+		}(merchant, msg)
 	} else {
+		// เคลียร์หมดเกลี้ยงแล้ว!
+		tm.PendingTradeList = nil
 		tm.State = TradeIdle
-		fmt.Println("[✨ Town Cycle Done] โอนขยะให้แม่ค้าหมดเกลี้ยงแล้ว! ตัวเบาหวิว พร้อมเดินกลับ LockMap ฟาร์มต่อ!")
+		if tm.Client != nil {
+			tm.Client.ReturningToMerchant = false
+		}
+		rnd := rand.Intn(9000) + 1000
+		msg := fmt.Sprintf("done %d", rnd)
+		fmt.Printf("[✨ Town Cycle Done] ส่ง PM '%s' หาแม่ค้า '%s' เรียบร้อย! ตัวเบาหวิว พร้อมเดินกลับ LockMap ฟาร์มต่อ!\n", msg, merchant)
+		if merchant != "" {
+			tm.Client.SendPM(merchant, msg)
+		}
 	}
 }
 
@@ -355,11 +402,9 @@ func (tm *TradeManager) HandleDealCancel() {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 
-	if !tm.DealActive && tm.State == TradeIdle {
-		return
-	}
-
 	tm.DealActive = false
+	tm.OtherLocked = false
 	tm.State = TradeIdle
-	fmt.Println("[⚠️ Trade Cancelled] หน้าต่างดีลถูกยกเลิก")
+	tm.CurrentBatch = nil
+	fmt.Println("[⚠️ Trade Cancelled] หน้าต่างดีลถูกยกเลิก พร้อมเริ่มใหม่เมื่อพร้อม")
 }
