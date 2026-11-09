@@ -709,8 +709,8 @@ func (c *BotClient) maintainMapConnection() {
 				if isVisitingMerchant {
 					// 1. กำลังมาหาแม่ค้า: เดิน A* ต่อไปยังพิกัดเป้าหมาย (merchantTargetX, merchantTargetY)
 					dist := math.Hypot(float64(c.CurrentX-merchantTargetX), float64(c.CurrentY-merchantTargetY))
-					if dist <= 3 {
-						// ถึงระยะยืนหน้าแม่ค้าแล้ว (ห่าง <= 3 ช่อง)!
+					if dist <= 1.5 {
+						// ถึงระยะยืนประชิดตัวแม่ค้าแล้ว (ห่าง <= 1 ช่อง เพื่อให้อยู่ใน TRADE_DISTANCE แน่นอน)!
 						if DebugMovement {
 							fmt.Printf("\n[🤝 Merchant] ยืนอยู่หน้าแม่ค้า %s แล้ว ที่ (%d, %d)\n", c.MerchantName, c.CurrentX, c.CurrentY)
 						}
@@ -867,25 +867,37 @@ func (c *BotClient) maintainMapConnection() {
 			}
 
 			// --- [🤝 Deal / Exchange Packets] ---
-			if pktID == 0x00E5 && offset+26 <= len(data) {
-				// ZC_REQ_EXCHANGE (26 bytes): มีคนขอดีลมา!
+			if (pktID == 0x00E5 && offset+26 <= len(data)) || (pktID == 0x01F4 && offset+32 <= len(data)) {
+				// 0x00E5 (26 bytes) หรือ 0x01F4 (32 bytes): มีคนขอดีลมา!
+				pLen := 26
+				if pktID == 0x01F4 {
+					pLen = 32
+				}
 				senderName := string(bytes.Trim(data[offset+2:offset+26], "\x00"))
-				fmt.Printf("\n[🤝 Deal Request] ตัวละคร '%s' ส่งคำขอดีลมา! กำลังกดตอบตกลง (0x00E6 3)...\n", senderName)
+				fmt.Printf("\n[🤝 Deal Request (0x%04X)] ตัวละคร '%s' ส่งคำขอดีลมา! กำลังกดตอบตกลง (0x00E6 3)...\n", pktID, senderName)
 				_ = c.sendMapPacket(BuildDealReply(3)) // กดตอบตกลงทันที (Action 3 = Accept Deal)
 				if c.Trade != nil {
 					c.Trade.DealActive = true
 					c.Trade.State = TradeDealWaitingHandshake
+					if pktID == 0x01F4 {
+						c.Trade.MerchantGID = binary.LittleEndian.Uint32(data[offset+26 : offset+30])
+					}
 				}
-				offset += 26
+				offset += pLen
 				continue
 			}
-			if pktID == 0x00E7 && offset+3 <= len(data) {
-				// ZC_ACK_EXCHANGE (3 bytes): หน้าต่างดีลเปิดเรียบร้อย
+			if (pktID == 0x00E7 && offset+3 <= len(data)) || (pktID == 0x01F5 && offset+9 <= len(data)) {
+				// 0x00E7 (3 bytes) หรือ 0x01F5 (9 bytes): หน้าต่างดีลเปิดเรียบร้อย
+				pLen := 3
+				if pktID == 0x01F5 {
+					pLen = 9
+				}
 				res := data[offset+2]
-				if res == 0 && c.Trade != nil {
+				fmt.Printf("\n[🤝 Deal Begin (0x%04X)] หน้าต่างดีลเปิดแล้ว (Status: %d)!\n", pktID, res)
+				if (res == 0 || res == 3) && c.Trade != nil {
 					c.Trade.HandleDealBegin()
 				}
-				offset += 3
+				offset += pLen
 				continue
 			}
 			if pktID == 0x00EC && offset+3 <= len(data) {
@@ -1085,28 +1097,7 @@ func (c *BotClient) maintainMapConnection() {
 				offset += pktLen
 				continue
 			}
-			if c.Trade != nil && c.Trade.IsActive() {
-				if pktID == 0x00E7 || pktID == 0x01F5 { // deal_begin (แม่ค้าตอบรับดีล)
-					c.Trade.HandleDealBegin()
-					offset += 3
-					continue
-				}
-				if pktID == 0x00EC { // deal_finalize (แม่ค้ากด Lock)
-					c.Trade.HandleDealOtherLocked()
-					offset += 3
-					continue
-				}
-				if pktID == 0x00F0 { // deal_complete (เทรดสำเร็จ)
-					c.Trade.HandleDealComplete()
-					offset += 2
-					continue
-				}
-				if pktID == 0x00EE { // deal_cancelled (ดีลถูกยกเลิก)
-					c.Trade.HandleDealCancel()
-					offset += 2
-					continue
-				}
-			}
+
 			if pktID == PacketRozRecv {
 				if offset+4 > len(data) {
 					break
