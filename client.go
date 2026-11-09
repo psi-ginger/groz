@@ -77,11 +77,12 @@ type BotClient struct {
 	Running        bool
 	IsDead         bool
 	AutoHuntActive bool
-	LastGPSMove    time.Time
-	MerchantName   string
-	MerchantLoc    string
-	AutoStat       string
-	AutoSkill      string
+	LastGPSMove         time.Time
+	ReturningToMerchant bool
+	MerchantName        string
+	MerchantLoc         string
+	AutoStat            string
+	AutoSkill           string
 }
 
 func NewBotClient(cfg Config) *BotClient {
@@ -423,6 +424,58 @@ func (c *BotClient) checkAutoStatAndSkill() {
 	}
 }
 
+// ParseLocation แปลงข้อความพิกัด เช่น "payon 167 104" หรือ "payon 167, 104" เป็นชื่อแมพและพิกัด X, Y
+func ParseLocation(loc string) (string, int, int, bool) {
+	clean := strings.ReplaceAll(loc, ",", " ")
+	parts := strings.Fields(clean)
+	if len(parts) >= 3 {
+		m := NormalizeMapName(parts[0])
+		x, errX := strconv.Atoi(parts[1])
+		y, errY := strconv.Atoi(parts[2])
+		if errX == nil && errY == nil {
+			return m, x, y, true
+		}
+	}
+	return "", 0, 0, false
+}
+
+// checkWeightAndSupplies ตรวจสอบน้ำหนักตัวละครและสลับโหมดกลับเมืองไปหาแม่ค้า
+func (c *BotClient) checkWeightAndSupplies() {
+	if c.MaxWeight <= 0 {
+		return
+	}
+	weightPct := (c.Weight * 100) / c.MaxWeight
+
+	// 1. ถ้าน้ำหนัก >= 50% และตั้งค่าจุดนัดพบแม่ค้าไว้ -> เริ่มกลับไปหาแม่ค้า
+	if weightPct >= 50 && c.MerchantLoc != "" && !c.ReturningToMerchant {
+		c.ReturningToMerchant = true
+		fmt.Printf("\n[📦 Return to Merchant] น้ำหนักเต็ม %d%% (เกิน 50%%)! สั่งหยุดฟาร์ม และมุ่งหน้าไปหาแม่ค้า %s ที่ %s\n",
+			weightPct, c.MerchantName, c.MerchantLoc)
+
+		// สั่งปิด AutoHunt ในเกมทันที
+		if c.AutoHuntActive {
+			c.AutoHuntActive = false
+			_ = c.sendMapPacket(BuildRozPacket(OpStop, ""))
+		}
+
+		// ใช้ Butterfly Wing ถ้ามีในกระเป๋า
+		if c.Inventory != nil {
+			bwingIdx, hasBwing := c.Inventory.FindItemIndex(602)
+			if hasBwing {
+				fmt.Println("[📦 Return to Merchant] กดใช้ Butterfly Wing วาร์ปกลับจุดเซฟ...")
+				_ = c.sendMapPacket(BuildUseItem(bwingIdx))
+			}
+		}
+		return
+	}
+
+	// 2. ถ้าน้ำหนักลดลงมาแล้ว (< 50%) และกำลังอยู่ในโหมดไปหาแม่ค้า -> เคลียร์สถานะ พร้อมกลับไปฟาร์มต่อ
+	if weightPct < 50 && c.ReturningToMerchant {
+		c.ReturningToMerchant = false
+		fmt.Printf("\n[✨ Ready to Farm] น้ำหนักเบาแล้ว (%d%%)! เตรียมเดินทางกลับสู่ LockMap: %s\n", weightPct, c.LockMap)
+	}
+}
+
 func (c *BotClient) maintainMapConnection() {
 	c.Running = true
 	defer func() { c.Running = false }()
@@ -452,6 +505,9 @@ func (c *BotClient) maintainMapConnection() {
 
 				// 3. ตรวจสอบอัพสเตตัสและสกิลอัตโนมัติตามที่พี่แมวตั้งค่า
 				c.checkAutoStatAndSkill()
+
+				// 4. ตรวจสอบน้ำหนักตัวละครและภารกิจกลับไปหาแม่ค้า
+				c.checkWeightAndSupplies()
 			}
 		}
 	}()
@@ -466,7 +522,22 @@ func (c *BotClient) maintainMapConnection() {
 				continue
 			}
 
-			if NormalizeMapName(c.CurrentMap) != NormalizeMapName(c.LockMap) {
+			// 1. ระบุเป้าหมายแมพ (ถ้าอยู่ในโหมดกลับไปหาแม่ค้า ให้มุ่งหน้าสู่แมพของแม่ค้า)
+			targetMap := c.LockMap
+			var merchantTargetX, merchantTargetY int
+			isVisitingMerchant := false
+
+			if c.ReturningToMerchant && c.MerchantLoc != "" {
+				mMap, mX, mY, ok := ParseLocation(c.MerchantLoc)
+				if ok {
+					targetMap = mMap
+					merchantTargetX = mX
+					merchantTargetY = mY
+					isVisitingMerchant = true
+				}
+			}
+
+			if NormalizeMapName(c.CurrentMap) != NormalizeMapName(targetMap) {
 				// 1. กำลังเดินทางข้ามแมพ: สั่งปิด AutoHunt ในเกมชั่วคราวเพื่อไม่ให้แย่งเดิน/นั่ง
 				if c.AutoHuntActive && c.MapPort != 5121 {
 					c.AutoHuntActive = false
@@ -492,8 +563,8 @@ func (c *BotClient) maintainMapConnection() {
 					}
 				}
 
-				// 3. คำนวณเส้นทางสู่ LockMap
-				route := c.Router.FindRoute(c.CurrentMap, c.LockMap)
+				// 3. คำนวณเส้นทางสู่ targetMap
+				route := c.Router.FindRoute(c.CurrentMap, targetMap)
 				if len(route) == 0 {
 					time.Sleep(1 * time.Second)
 					continue
@@ -633,7 +704,65 @@ func (c *BotClient) maintainMapConnection() {
 				c.CurrentX = targetX
 				c.CurrentY = targetY
 			} else {
-				// ถึงแมพเป้าหมายแล้ว: ถ้ายังไม่ได้เปิด AutoHunt ให้เปิดทันที!
+				// ถึงแมพเป้าหมายแล้ว!
+				if isVisitingMerchant {
+					// 1. กำลังมาหาแม่ค้า: เดิน A* ต่อไปยังพิกัดเป้าหมาย (merchantTargetX, merchantTargetY)
+					dist := math.Hypot(float64(c.CurrentX-merchantTargetX), float64(c.CurrentY-merchantTargetY))
+					if dist <= 3 {
+						// ถึงระยะยืนหน้าแม่ค้าแล้ว (ห่าง <= 3 ช่อง)!
+						if DebugMovement {
+							fmt.Printf("\n[🤝 Merchant] ยืนอยู่หน้าแม่ค้า %s แล้ว ที่ (%d, %d)\n", c.MerchantName, c.CurrentX, c.CurrentY)
+						}
+						time.Sleep(1 * time.Second)
+						continue
+					}
+
+					// โหลดตาราง Grid แผนที่หากยังไม่ได้โหลด
+					if c.CurrentField == nil || c.CurrentField.Name != NormalizeMapName(c.CurrentMap) {
+						fld, err := LoadMapField(c.CurrentMap)
+						if err == nil {
+							c.CurrentField = fld
+						}
+					}
+
+					// ค้นหาเส้นทาง A* เดินไปยังพิกัดแม่ค้า
+					var walkX, walkY int
+					stepsWalked := 10
+					if c.CurrentField != nil {
+						path := c.CurrentField.FindPath(c.CurrentX, c.CurrentY, merchantTargetX, merchantTargetY, 20000)
+						if len(path) > 0 {
+							stepIdx := 10
+							if stepIdx >= len(path) {
+								stepIdx = len(path) - 1
+							}
+							for stepIdx > 0 && !c.CurrentField.HasLOS(c.CurrentX, c.CurrentY, path[stepIdx][0], path[stepIdx][1]) {
+								stepIdx--
+							}
+							walkX = path[stepIdx][0]
+							walkY = path[stepIdx][1]
+							stepsWalked = stepIdx + 1
+						} else {
+							walkX, walkY = c.CurrentField.FindNearestWalkable(merchantTargetX, merchantTargetY, 5)
+						}
+					} else {
+						walkX = merchantTargetX
+						walkY = merchantTargetY
+					}
+
+					if walkX > 0 && walkY > 0 {
+						_ = c.sendMapPacket(BuildMove(walkX, walkY))
+						walkDuration := time.Duration(stepsWalked*170) * time.Millisecond
+						if walkDuration < 800*time.Millisecond {
+							walkDuration = 800 * time.Millisecond
+						}
+						time.Sleep(walkDuration)
+						c.CurrentX = walkX
+						c.CurrentY = walkY
+					}
+					continue
+				}
+
+				// 2. ถ้าเป็น LockMap ปกติ: เปิด AutoHunt
 				if !c.AutoHuntActive {
 					if c.MapPort != 5121 && !c.CipherActive {
 						time.Sleep(500 * time.Millisecond)
@@ -976,6 +1105,7 @@ func (c *BotClient) maintainMapConnection() {
 						if mwStr := extractKV(payload, "mw"); mwStr != "" {
 							fmt.Sscanf(mwStr, "%d", &c.MaxWeight)
 						}
+						c.checkWeightAndSupplies()
 					}
 
 					// Op 1, 2, 3, 4: สถานะบอทและการตั้งค่าของเซิร์ฟเวอร์

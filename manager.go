@@ -325,7 +325,9 @@ func (m *BotManager) GetAllStatuses() []BotStatusJSON {
 		}
 
 		statusText := "🔍 ลาดตระเวน"
-		if NormalizeMapName(bot.CurrentMap) != NormalizeMapName(p.LockMap) {
+		if bot.ReturningToMerchant {
+			statusText = fmt.Sprintf("📦 ไปหาแม่ค้า %s (%s)", p.MerchantName, p.MerchantLoc)
+		} else if NormalizeMapName(bot.CurrentMap) != NormalizeMapName(p.LockMap) {
 			statusText = fmt.Sprintf("🧭 เดินทางสู่ %s", p.LockMap)
 		} else if bot.TargetGID > 0 {
 			statusText = fmt.Sprintf("⚔️ ตีมอน #%d", bot.TargetGID)
