@@ -303,8 +303,19 @@ func (tm *TradeManager) StartDealSession(merchantGID uint32) {
 	totalItems := len(tm.PendingTradeList)
 	totalRounds := int(math.Ceil(float64(totalItems) / 10.0))
 
-	fmt.Printf("[🤝 Trade] ยื่นดีลแม่ค้า (GID: %d) | ของทั้งหมด %d ชนิด (ต้องดีล %d รอบ)\n",
-		merchantGID, totalItems, totalRounds)
+	fmt.Printf("[🤝 Trade] ยื่นดีลแม่ค้า (GID: %d) | ในกระเป๋ามี %d ชนิด | จะส่งมอบ %d ชนิด (ต้องดีล %d รอบ)\n",
+		merchantGID, len(tm.Client.Inventory.Items), totalItems, totalRounds)
+	if len(tm.PendingTradeList) > 0 {
+		fmt.Printf("   [📦 รายการที่จะโอนให้แม่ค้าในเซ็ตนี้]:\n")
+		for _, it := range tm.PendingTradeList {
+			fmt.Printf("      -> Index %d: ID %d x%d (Type %d)\n", it.Index, it.NameID, it.Amount, it.Type)
+		}
+	} else if len(tm.Client.Inventory.Items) > 0 {
+		fmt.Printf("   [ℹ️ รายการในกระเป๋าที่ติดโควต้า keep_items / ของสวมใส่]:\n")
+		for _, it := range tm.Client.Inventory.Items {
+			fmt.Printf("      -> Index %d: ID %d x%d (Type %d, Equip %d)\n", it.Index, it.NameID, it.Amount, it.Type, it.Equipped)
+		}
+	}
 
 	// ส่งคำขอดีล (0x00E4)
 	tm.Client.sendMapPacket(BuildDealInitiate(merchantGID))

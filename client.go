@@ -964,7 +964,7 @@ func (c *BotClient) maintainMapConnection() {
 				continue
 			}
 
-			// --- [🎒 Inventory Packets] ---
+			// --- [🎒 Inventory Packets: Item Removal] ---
 			if pktID == 0x00AF && offset+6 <= len(data) {
 				// ZC_ITEM_FALL_ENTRY / inventory_item_removed (6 bytes): idx uint16, amount uint16
 				idx := binary.LittleEndian.Uint16(data[offset+2 : offset+4])
@@ -975,62 +975,199 @@ func (c *BotClient) maintainMapConnection() {
 				offset += 6
 				continue
 			}
-
-			// --- [🎒 Inventory Packets] ---
-			if (pktID == 0x01EE || pktID == 0x02E8 || pktID == 0x0991) && offset+4 <= len(data) {
-				// ข้อมูลไอเทมทั้งหมดในกระเป๋า (0x0991 ขนาด 24B, 0x02E8 ขนาด 22B, 0x01EE ขนาด 18B)
-				pLen := int(binary.LittleEndian.Uint16(data[offset+2 : offset+4]))
-				if offset+pLen <= len(data) {
-					itemBytes := data[offset+4 : offset+pLen]
-					itemSize := 18
-					if pktID == 0x02E8 {
-						itemSize = 22
-					} else if pktID == 0x0991 {
-						itemSize = 24
-					}
-					itemCount := 0
-					for i := 0; i+itemSize <= len(itemBytes); i += itemSize {
-						idx := binary.LittleEndian.Uint16(itemBytes[i : i+2])
-						nameID := binary.LittleEndian.Uint16(itemBytes[i+2 : i+4])
-						itemType := itemBytes[i+4]
-						var amount int
-						if pktID == 0x0991 {
-							// 0x0991: ID(2), nameID(2), type(1), amount(2)
-							amount = int(binary.LittleEndian.Uint16(itemBytes[i+5 : i+7]))
-						} else {
-							// 0x01EE / 0x02E8: ID(2), nameID(2), type(1), identified(1), amount(2)
-							amount = int(binary.LittleEndian.Uint16(itemBytes[i+6 : i+8]))
-						}
-						if c.Inventory != nil {
-							c.Inventory.SetItem(&Item{
-								Index:      idx,
-								NameID:     nameID,
-								Amount:     amount,
-								Type:       itemType,
-								Identified: true,
-							})
-							itemCount++
-						}
-					}
-					if itemCount > 0 {
-						fmt.Printf("[🎒 Inventory (0x%04X)] ซิงค์ข้อมูลไอเทมในกระเป๋า %d ชิ้นเรียบร้อย\n", pktID, itemCount)
-					}
-					offset += pLen
-					continue
-				}
-			}
-			if (pktID == 0x02D4 && offset+39 <= len(data)) || (pktID == 0x00A0 && offset+33 <= len(data)) {
-				// ไอเทมที่เก็บได้จากการฟาร์ม (0x02D4: 39 bytes, 0x00A0: 33 bytes)
-				pLen := 33
-				if pktID == 0x02D4 {
-					pLen = 39
-				}
-				idx := binary.LittleEndian.Uint16(data[offset+2 : offset+4])
-				amount := int(binary.LittleEndian.Uint16(data[offset+4 : offset+6]))
-				nameID := binary.LittleEndian.Uint16(data[offset+6 : offset+8])
-				itemType := data[offset+21]
+			if pktID == 0x07FA && offset+8 <= len(data) {
+				// ZC_ITEM_FALL_ENTRY2 (8 bytes): reason uint16, idx uint16, amount uint16
+				idx := binary.LittleEndian.Uint16(data[offset+4 : offset+6])
+				amount := int(binary.LittleEndian.Uint16(data[offset+6 : offset+8]))
 				if c.Inventory != nil {
-					// ถ้ามีอยู่แล้วให้บวกจำนวนเพิ่ม
+					c.Inventory.RemoveItem(idx, amount)
+				}
+				offset += 8
+				continue
+			}
+
+			// --- [🎒 Inventory Packets: Stackable Items (0x0B09, 0x0991, 0x0900, 0x02E8, 0x01EE)] ---
+			if (pktID == 0x0B09 || pktID == 0x0991 || pktID == 0x0900 || pktID == 0x02E8 || pktID == 0x01EE || pktID == 0x00A3) && offset+4 <= len(data) {
+				pLen := int(binary.LittleEndian.Uint16(data[offset+2 : offset+4]))
+				if pLen < 4 || offset+pLen > len(data) {
+					break
+				}
+				itemStart := offset + 4
+				itemSize := 18
+				if pktID == 0x0B09 {
+					itemStart = offset + 5 // 0x0B09 มีไบต์ Type คั่นที่ offset+4, ข้อมูลไอเทมเริ่มที่ offset+5
+					itemSize = 34          // Modern 2025: ID(2), nameID(4), type(1), amount(2), type_equip(4), cards(16), expire(4), identified(1)
+				} else if pktID == 0x0991 {
+					itemSize = 24 // ID(2), nameID(2), type(1), amount(2), type_equip(4), cards(8), expire(4), identified(1)
+				} else if pktID == 0x0900 || pktID == 0x02E8 {
+					itemSize = 22 // ID(2), nameID(2), type(1), identified(1), amount(2)...
+				} else if pktID == 0x00A3 {
+					itemSize = 10
+				}
+				itemBytes := data[itemStart : offset+pLen]
+
+				itemCount := 0
+				for i := 0; i+itemSize <= len(itemBytes); i += itemSize {
+					idx := binary.LittleEndian.Uint16(itemBytes[i : i+2])
+					var nameID uint16
+					var itemType byte
+					var amount int
+
+					if pktID == 0x0B09 {
+						nameID = uint16(binary.LittleEndian.Uint32(itemBytes[i+2 : i+6]))
+						itemType = itemBytes[i+6]
+						amount = int(binary.LittleEndian.Uint16(itemBytes[i+7 : i+9]))
+					} else if pktID == 0x0991 {
+						nameID = binary.LittleEndian.Uint16(itemBytes[i+2 : i+4])
+						itemType = itemBytes[i+4]
+						amount = int(binary.LittleEndian.Uint16(itemBytes[i+5 : i+7]))
+					} else if pktID == 0x0900 || pktID == 0x02E8 {
+						nameID = binary.LittleEndian.Uint16(itemBytes[i+2 : i+4])
+						itemType = itemBytes[i+4]
+						amount = int(binary.LittleEndian.Uint16(itemBytes[i+6 : i+8]))
+					} else {
+						nameID = binary.LittleEndian.Uint16(itemBytes[i+2 : i+4])
+						itemType = itemBytes[i+4]
+						amount = int(binary.LittleEndian.Uint16(itemBytes[i+6 : i+8]))
+					}
+
+					if c.Inventory != nil && idx > 0 {
+						c.Inventory.SetItem(&Item{
+							Index:      idx,
+							NameID:     nameID,
+							Amount:     amount,
+							Type:       itemType,
+							Identified: true,
+						})
+						itemCount++
+					}
+				}
+				if itemCount > 0 {
+					fmt.Printf("\n[🎒 Inventory Stackable (0x%04X)] โหลดไอเทมในกระเป๋า %d รายการสำเร็จ\n", pktID, itemCount)
+				}
+				offset += pLen
+				continue
+			}
+
+			// --- [🎒 Inventory Packets: Non-Stackable Equipments / Cards (0x0B0A, 0x0A0D, 0x0992, 0x0901, 0x02D0)] ---
+			if (pktID == 0x0B0A || pktID == 0x0A0D || pktID == 0x0992 || pktID == 0x0901 || pktID == 0x02D0 || pktID == 0x0295 || pktID == 0x00A4) && offset+4 <= len(data) {
+				pLen := int(binary.LittleEndian.Uint16(data[offset+2 : offset+4]))
+				if pLen < 4 || offset+pLen > len(data) {
+					break
+				}
+				itemStart := offset + 4
+				itemSize := 20
+				if pktID == 0x0B0A {
+					itemStart = offset + 5 // 0x0B0A มีไบต์ Type คั่นที่ offset+4, ข้อมูลไอเทมเริ่มที่ offset+5
+					itemSize = 67          // Modern 2025: ID(2), nameID(4), type(1), type_equip(4), equipped(4)...
+				} else if pktID == 0x0A0D {
+					itemSize = 57 // ID(2), nameID(2), type(1), type_equip(4), equipped(4)...
+				} else if pktID == 0x0992 {
+					itemSize = 31 // ID(2), nameID(2), type(1), type_equip(4), equipped(4)...
+				} else if pktID == 0x02D0 {
+					itemSize = 28
+				} else if pktID == 0x0295 {
+					itemSize = 24
+				}
+				itemBytes := data[itemStart : offset+pLen]
+
+				itemCount := 0
+				for i := 0; i+itemSize <= len(itemBytes); i += itemSize {
+					idx := binary.LittleEndian.Uint16(itemBytes[i : i+2])
+					var nameID uint16
+					var itemType byte
+					var equipped uint16
+
+					if pktID == 0x0B0A {
+						nameID = uint16(binary.LittleEndian.Uint32(itemBytes[i+2 : i+6]))
+						itemType = itemBytes[i+6]
+						equipped = uint16(binary.LittleEndian.Uint32(itemBytes[i+11 : i+15]))
+					} else if pktID == 0x0A0D {
+						nameID = binary.LittleEndian.Uint16(itemBytes[i+2 : i+4])
+						itemType = itemBytes[i+4]
+						equipped = uint16(binary.LittleEndian.Uint32(itemBytes[i+9 : i+13]))
+					} else if pktID == 0x0992 {
+						nameID = binary.LittleEndian.Uint16(itemBytes[i+2 : i+4])
+						itemType = itemBytes[i+4]
+						equipped = uint16(binary.LittleEndian.Uint32(itemBytes[i+9 : i+13]))
+					} else {
+						nameID = binary.LittleEndian.Uint16(itemBytes[i+2 : i+4])
+						itemType = itemBytes[i+4]
+					}
+
+					if c.Inventory != nil && idx > 0 {
+						c.Inventory.SetItem(&Item{
+							Index:      idx,
+							NameID:     nameID,
+							Amount:     1,
+							Type:       itemType,
+							Equipped:   equipped,
+							Identified: true,
+						})
+						itemCount++
+					}
+				}
+				if itemCount > 0 {
+					fmt.Printf("\n[🎒 Inventory Equipment (0x%04X)] โหลดอุปกรณ์/การ์ดในกระเป๋า %d รายการสำเร็จ\n", pktID, itemCount)
+				}
+				offset += pLen
+				continue
+			}
+
+			// --- [📦 Item Pickup Packets (0x0B41, 0x0A37, 0x0A0C, 0x0990, 0x02D4, 0x00A0)] ---
+			if (pktID == 0x0B41 && offset+70 <= len(data)) ||
+				(pktID == 0x0A37 && offset+69 <= len(data)) ||
+				(pktID == 0x0A0C && offset+66 <= len(data)) ||
+				(pktID == 0x0990 && offset+41 <= len(data)) ||
+				(pktID == 0x02D4 && offset+39 <= len(data)) ||
+				(pktID == 0x00A0 && offset+33 <= len(data)) {
+
+				pLen := 33
+				var idx uint16
+				var amount int
+				var nameID uint16
+				var itemType byte
+
+				switch pktID {
+				case 0x0B41:
+					pLen = 70
+					idx = binary.LittleEndian.Uint16(data[offset+2 : offset+4])
+					amount = int(binary.LittleEndian.Uint16(data[offset+4 : offset+6]))
+					nameID = uint16(binary.LittleEndian.Uint32(data[offset+6 : offset+10]))
+					itemType = data[offset+32]
+				case 0x0A37:
+					pLen = 69
+					idx = binary.LittleEndian.Uint16(data[offset+2 : offset+4])
+					amount = int(binary.LittleEndian.Uint16(data[offset+4 : offset+6]))
+					nameID = uint16(binary.LittleEndian.Uint32(data[offset+6 : offset+10]))
+					itemType = data[offset+33]
+				case 0x0A0C:
+					pLen = 66
+					idx = binary.LittleEndian.Uint16(data[offset+2 : offset+4])
+					amount = int(binary.LittleEndian.Uint16(data[offset+4 : offset+6]))
+					nameID = binary.LittleEndian.Uint16(data[offset+6 : offset+8])
+					itemType = data[offset+29]
+				case 0x0990:
+					pLen = 41
+					idx = binary.LittleEndian.Uint16(data[offset+2 : offset+4])
+					amount = int(binary.LittleEndian.Uint16(data[offset+4 : offset+6]))
+					nameID = binary.LittleEndian.Uint16(data[offset+6 : offset+8])
+					itemType = data[offset+29]
+				case 0x02D4:
+					pLen = 39
+					idx = binary.LittleEndian.Uint16(data[offset+2 : offset+4])
+					amount = int(binary.LittleEndian.Uint16(data[offset+4 : offset+6]))
+					nameID = binary.LittleEndian.Uint16(data[offset+6 : offset+8])
+					itemType = data[offset+27]
+				case 0x00A0:
+					pLen = 33
+					idx = binary.LittleEndian.Uint16(data[offset+2 : offset+4])
+					amount = int(binary.LittleEndian.Uint16(data[offset+4 : offset+6]))
+					nameID = binary.LittleEndian.Uint16(data[offset+6 : offset+8])
+					itemType = data[offset+25]
+				}
+
+				if c.Inventory != nil && idx > 0 {
 					c.Inventory.mu.Lock()
 					if it, exists := c.Inventory.Items[idx]; exists {
 						it.Amount += amount
@@ -1044,7 +1181,7 @@ func (c *BotClient) maintainMapConnection() {
 						}
 					}
 					c.Inventory.mu.Unlock()
-					fmt.Printf("[📦 Drop] เก็บไอเทมได้: ID %d (จำนวน %d ชิ้น) -> กระเป๋าอัปเดต\n", nameID, amount)
+					fmt.Printf("[📦 Drop (0x%04X)] เก็บไอเทม: ID %d (จำนวน %d ชิ้น) -> ซิงค์เข้ากระเป๋าเรียบร้อย\n", pktID, nameID, amount)
 				}
 				offset += pLen
 				continue
