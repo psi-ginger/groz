@@ -1184,7 +1184,8 @@ func (c *BotClient) maintainMapConnection() {
 						}
 					}
 					c.Inventory.mu.Unlock()
-					fmt.Printf("[📦 Drop (0x%04X)] เก็บไอเทม: ID %d (จำนวน %d ชิ้น) -> ซิงค์เข้ากระเป๋าเรียบร้อย\n", pktID, nameID, amount)
+					// ปิด log การเก็บไอเทมดรอปไม่ให้รกหน้าจอตามคำขอของพี่แมวค่ะ
+					// fmt.Printf("[📦 Drop (0x%04X)] เก็บไอเทม: ID %d (จำนวน %d ชิ้น) -> ซิงค์เข้ากระเป๋าเรียบร้อย\n", pktID, nameID, amount)
 				}
 				offset += pLen
 				continue
