@@ -513,6 +513,11 @@ func (c *BotClient) maintainMapConnection() {
 
 				// 4. ตรวจสอบน้ำหนักตัวละครและภารกิจกลับไปหาแม่ค้า
 				c.checkWeightAndSupplies()
+
+				// 5. ตรวจสอบ Trade Watchdog ป้องกันการค้างดีล
+				if c.Trade != nil {
+					c.Trade.CheckWatchdog()
+				}
 			}
 		}
 	}()
@@ -521,6 +526,11 @@ func (c *BotClient) maintainMapConnection() {
 	go func() {
 		for c.Running {
 			time.Sleep(300 * time.Millisecond)
+
+			// ตรวจสอบ Trade Watchdog สม่ำเสมอ
+			if c.Trade != nil {
+				c.Trade.CheckWatchdog()
+			}
 
 			// ข้ามถ้ากำลังดีลของ หรือข้อมูลยังไม่พร้อม หรือยังรอ Cipher Handshake อยู่บน Field Map
 			if (c.Trade != nil && c.Trade.IsActive()) || c.CurrentMap == "" || c.LockMap == "" || c.Router == nil || (c.MapPort != 5121 && !c.CipherActive) {
@@ -719,8 +729,22 @@ func (c *BotClient) maintainMapConnection() {
 							fmt.Printf("\n[🤝 Merchant] ยืนอยู่หน้าแม่ค้า %s แล้ว ที่ (%d, %d)\n", c.MerchantName, c.CurrentX, c.CurrentY)
 						}
 
+						// ตรวจสอบ Watchdog ป้องกันการค้าง
+						if c.Trade != nil {
+							c.Trade.CheckWatchdog()
+						}
+
 						// ยื่นดีลใส่แม่ค้าทันที (Initiate Deal)
 						if c.Trade != nil && !c.Trade.IsActive() && c.MerchantName != "" {
+							// ตรวจสอบก่อนว่ามีของที่จะต้องดีลหรือไม่
+							itemsToTrade := c.Inventory.GetItemsToTrade(c.Trade.Config)
+							if len(itemsToTrade) == 0 {
+								fmt.Println("[✨ Town Cycle] ไม่มีไอเทมขยะที่ต้องส่งมอบแล้ว! เคลียร์โหมดกลับเมือง พร้อมกลับไปฟาร์มต่อ...")
+								c.ReturningToMerchant = false
+								time.Sleep(1 * time.Second)
+								continue
+							}
+
 							if time.Since(c.LastGPSMove) >= 3*time.Second {
 								c.LastGPSMove = time.Now()
 								if c.Trade.MerchantGID > 0 {
@@ -931,9 +955,27 @@ func (c *BotClient) maintainMapConnection() {
 					pLen = 9
 				}
 				res := data[offset+2]
-				fmt.Printf("\n[🤝 Deal Begin (0x%04X)] หน้าต่างดีลเปิดแล้ว (Status: %d)!\n", pktID, res)
-				if (res == 0 || res == 3) && c.Trade != nil {
-					c.Trade.HandleDealBegin()
+				if res == 0 || res == 3 {
+					fmt.Printf("\n[🤝 Deal Begin (0x%04X)] หน้าต่างดีลเปิดสำเร็จ (Status: %d)!\n", pktID, res)
+					if c.Trade != nil {
+						c.Trade.HandleDealBegin()
+					}
+				} else {
+					var reason string
+					switch res {
+					case 1:
+						reason = "ระยะห่างเกินกำหนด (Too far)"
+					case 2:
+						reason = "ไม่พบตัวละครแม่ค้า (Character not found)"
+					case 4:
+						reason = "แม่ค้าติดคุย NPC หรือกำลังเทรดอยู่ (Busy/Already trading)"
+					default:
+						reason = fmt.Sprintf("รหัสปฏิเสธ %d", res)
+					}
+					fmt.Printf("\n[⚠️ Deal Failed (0x%04X)] ยื่นดีลไม่สำเร็จ (%s)! รีเซ็ตสถานะเพื่อเตรียมลองใหม่...\n", pktID, reason)
+					if c.Trade != nil {
+						c.Trade.HandleDealCancel()
+					}
 				}
 				offset += pLen
 				continue
@@ -949,8 +991,15 @@ func (c *BotClient) maintainMapConnection() {
 			if pktID == 0x00F0 && offset+3 <= len(data) {
 				// ZC_EXEC_EXCHANGE (3 bytes): ดีลสำเร็จสมบูรณ์!
 				res := data[offset+2]
-				if res == 0 && c.Trade != nil {
-					c.Trade.HandleDealComplete()
+				if res == 0 {
+					if c.Trade != nil {
+						c.Trade.HandleDealComplete()
+					}
+				} else {
+					fmt.Printf("\n[⚠️ Deal Exec Failed] ผลการแลกเปลี่ยนล้มเหลว (Status: %d)! รีเซ็ตสถานะ...\n", res)
+					if c.Trade != nil {
+						c.Trade.HandleDealCancel()
+					}
 				}
 				offset += 3
 				continue

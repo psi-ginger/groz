@@ -221,6 +221,7 @@ type TradeManager struct {
 	MerchantY    int
 
 	State            TradeState
+	LastStateChange  time.Time
 	PendingTradeList []*Item
 	CurrentBatch     []*Item
 	OtherLocked      bool
@@ -235,12 +236,13 @@ type TradeManager struct {
 func NewTradeManager(client *BotClient) *TradeManager {
 	cfgFile := "trade_config.json"
 	return &TradeManager{
-		Client:       client,
-		ConfigFile:   cfgFile,
-		Config:       LoadTradeConfig(cfgFile),
-		State:        TradeIdle,
-		MinHPPotions: 20,
-		MinArrows:    500,
+		Client:          client,
+		ConfigFile:      cfgFile,
+		Config:          LoadTradeConfig(cfgFile),
+		State:           TradeIdle,
+		LastStateChange: time.Now(),
+		MinHPPotions:    20,
+		MinArrows:       500,
 	}
 }
 
@@ -274,6 +276,7 @@ func (tm *TradeManager) CheckWeightAndReturn() bool {
 
 	tm.RestockRequired = needRestock
 	tm.State = TradeReturningToTown
+	tm.LastStateChange = time.Now()
 	fmt.Printf("[📦 Town Cycle] น้ำหนัก %d%% (ยาเหลือ %d) -> เริ่มกระบวนการกลับเมืองไปหาแม่ค้า\n", weightPct, hpPotions)
 
 	// ใช้ Butterfly Wing (Item ID: 602)
@@ -297,6 +300,7 @@ func (tm *TradeManager) StartDealSession(merchantGID uint32) {
 	tm.OtherLocked = false
 	tm.DealActive = false
 	tm.State = TradeDealInitiating
+	tm.LastStateChange = time.Now()
 
 	// ดึงรายการของที่จะเทรดตาม config
 	tm.PendingTradeList = tm.Client.Inventory.GetItemsToTrade(tm.Config)
@@ -333,6 +337,7 @@ func (tm *TradeManager) HandleDealBegin() {
 	tm.DealActive = true
 	tm.OtherLocked = false
 	tm.State = TradeDealWaitingHandshake
+	tm.LastStateChange = time.Now()
 	tm.mu.Unlock()
 
 	fmt.Println("[🤝 Trade] หน้าต่างดีลเปิดเรียบร้อยแล้ว! Pause 3 วินาทีเพื่อให้ฝั่งแม่ค้าพร้อม...")
@@ -371,6 +376,7 @@ func (tm *TradeManager) ExecuteTradeStep3And4() {
 
 	// Step 4: โอนขยะไม่เกิน 10 ชนิด
 	tm.State = TradeAddingItems
+	tm.LastStateChange = time.Now()
 	batchSize := 10
 	if len(tm.PendingTradeList) < batchSize {
 		batchSize = len(tm.PendingTradeList)
@@ -379,6 +385,7 @@ func (tm *TradeManager) ExecuteTradeStep3And4() {
 	if batchSize == 0 {
 		fmt.Println("[ℹ️ Trade] ไม่มีไอเทมขยะที่ต้องส่งมอบในรอบนี้ กด Lock ดีลทันที")
 		tm.State = TradeWaitingLock
+		tm.LastStateChange = time.Now()
 		tm.Client.sendMapPacket(BuildDealFinalize())
 		return
 	}
@@ -396,6 +403,7 @@ func (tm *TradeManager) ExecuteTradeStep3And4() {
 	// Step 5: กด Lock (0x00EB)
 	fmt.Println("[🔒 Trade Step 5] โอนครบแล้ว -> กด Lock ดีล (0x00EB)...")
 	tm.State = TradeWaitingLock
+	tm.LastStateChange = time.Now()
 	tm.Client.sendMapPacket(BuildDealFinalize())
 }
 
@@ -414,6 +422,7 @@ func (tm *TradeManager) HandleDealOtherLocked() {
 	// หากเราก็กด Lock แล้ว ให้กดยืนยันจบเทรด (0x00EF)
 	if tm.State == TradeWaitingLock {
 		tm.State = TradeConfirming
+		tm.LastStateChange = time.Now()
 		fmt.Println("[✅ Trade Step 5] ยืนยันการแลกเปลี่ยนรอบสุดท้าย (0x00EF)...")
 		tm.Client.sendMapPacket(BuildDealTrade())
 	}
@@ -426,6 +435,7 @@ func (tm *TradeManager) HandleDealComplete() {
 
 	tm.DealActive = false
 	tm.State = TradeRoundComplete
+	tm.LastStateChange = time.Now()
 	fmt.Println("[🎉 Trade Complete] การแลกเปลี่ยนรอบนี้สำเร็จสมบูรณ์!")
 
 	// ตัดไอเทมที่ส่งมอบสำเร็จออกจาก Inventory ในตัวบอท
@@ -444,6 +454,7 @@ func (tm *TradeManager) HandleDealComplete() {
 	if len(remaining) > 0 {
 		tm.PendingTradeList = remaining
 		tm.State = TradeDealInitiating
+		tm.LastStateChange = time.Now()
 		fmt.Printf("[🔄 Trade Loop] ยังมีขยะเหลืออีก %d ชนิด! รอ 2 วินาทีแล้วเริ่มยื่นดีลรอบถัดไปอัตโนมัติ...\n", len(remaining))
 		go func() {
 			time.Sleep(2 * time.Second)
@@ -458,6 +469,7 @@ func (tm *TradeManager) HandleDealComplete() {
 		// เคลียร์หมดเกลี้ยงแล้ว!
 		tm.PendingTradeList = nil
 		tm.State = TradeIdle
+		tm.LastStateChange = time.Now()
 		if tm.Client != nil {
 			tm.Client.ReturningToMerchant = false
 		}
@@ -478,6 +490,49 @@ func (tm *TradeManager) HandleDealCancel() {
 	tm.DealActive = false
 	tm.OtherLocked = false
 	tm.State = TradeIdle
+	tm.LastStateChange = time.Now()
 	tm.CurrentBatch = nil
 	fmt.Println("[⚠️ Trade Cancelled] หน้าต่างดีลถูกยกเลิก พร้อมเริ่มใหม่เมื่อพร้อม")
+}
+
+// CheckWatchdog ตรวจสอบสถานะการดีล ป้องกันการค้างยืนนิ่งเมื่อไม่มีการตอบรับจากฝั่งตรงข้ามหรือเซิร์ฟเวอร์
+func (tm *TradeManager) CheckWatchdog() {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+
+	if tm.State == TradeIdle || tm.State == TradeReturningToTown || tm.State == TradeApproachingMerchant {
+		return
+	}
+
+	elapsed := time.Since(tm.LastStateChange)
+
+	// กรณี 1: ยื่นขอดีลไปแล้ว (TradeDealInitiating) แต่ไม่ได้รับการตอบรับจากแม่ค้าเกิน 8 วินาที
+	if tm.State == TradeDealInitiating && elapsed >= 8*time.Second {
+		fmt.Printf("\n[⏱️ Trade Watchdog] รอตอบรับดีลจากแม่ค้าเกิน 8 วินาที (Timeout)! สั่งส่ง 0x00EE ยกเลิกและรีเซ็ตสถานะ...\n")
+		tm.State = TradeIdle
+		tm.DealActive = false
+		tm.OtherLocked = false
+		tm.PendingTradeList = nil
+		tm.CurrentBatch = nil
+		tm.LastStateChange = time.Now()
+		if tm.Client != nil {
+			_ = tm.Client.sendMapPacket(BuildDealCancel())
+		}
+		return
+	}
+
+	// กรณี 2: หน้าต่างดีลเปิดอยู่ (รอกด Lock / รอยืนยัน) แต่ค้างเกิน 15 วินาที
+	if (tm.State == TradeDealWaitingHandshake || tm.State == TradeAddingItems || tm.State == TradeWaitingLock || tm.State == TradeConfirming) && elapsed >= 15*time.Second {
+		fmt.Printf("\n[⏱️ Trade Watchdog] หน้าต่างดีลค้างในสถานะ %v เกิน 15 วินาที! สั่งส่ง 0x00EE ยกเลิกและรีเซ็ตสถานะ...\n", tm.State)
+		tm.State = TradeIdle
+		tm.DealActive = false
+		tm.OtherLocked = false
+		tm.PendingTradeList = nil
+		tm.CurrentBatch = nil
+		tm.LastStateChange = time.Now()
+		if tm.Client != nil {
+			_ = tm.Client.sendMapPacket(BuildDealCancel())
+		}
+		return
+	}
 }
