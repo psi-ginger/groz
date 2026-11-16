@@ -14,6 +14,7 @@ func main() {
 
 	mgr := NewBotManager("profiles")
 	StartWebServer(mgr, 8080)
+	StartHUDPusher(mgr, "")
 
 	// เริ่มรันบอททุกตัวที่ตั้ง enabled: true ใน profiles/
 	mgr.StartAll()
