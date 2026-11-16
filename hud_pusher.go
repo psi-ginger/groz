@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -13,24 +12,6 @@ const (
 	DefaultHUDEndpoint = "https://cat-site.xryliko.workers.dev"
 	DefaultHUDAPIKey   = "b75ddaba8c6779a50caec46e46ec2c1c"
 )
-
-type ROPayload struct {
-	CharName   string `json:"char_name"`
-	JobClass   string `json:"job_class"`
-	BaseLevel  int    `json:"base_level"`
-	JobLevel   int    `json:"job_level"`
-	HP         int    `json:"hp"`
-	MaxHP      int    `json:"max_hp"`
-	SP         int    `json:"sp"`
-	MaxSP      int    `json:"max_sp"`
-	CurrentMap string `json:"current_map"`
-	CurrentX   int    `json:"current_x"`
-	CurrentY   int    `json:"current_y"`
-	Zeny       int    `json:"zeny"`
-	StatusText string `json:"status_text"`
-	MapWidth   int    `json:"map_width"`
-	MapHeight  int    `json:"map_height"`
-}
 
 type HUDCommandResponse struct {
 	Status  string `json:"status"`
@@ -41,7 +22,7 @@ type HUDCommandResponse struct {
 	} `json:"command"`
 }
 
-// StartHUDPusher เริ่ม Goroutine ยิงข้อมูลสถานะขึ้น Cloudflare Unified Web HUD
+// StartHUDPusher เริ่ม Goroutine ยิงข้อมูลสถานะบอททั้งหมดขึ้น Cloudflare Unified Web HUD
 func StartHUDPusher(mgr *BotManager, endpoint string) {
 	if endpoint == "" {
 		endpoint = DefaultHUDEndpoint
@@ -58,71 +39,12 @@ func StartHUDPusher(mgr *BotManager, endpoint string) {
 				continue
 			}
 
-			mgr.mu.RLock()
-			var activeBot *BotClient
-			var activeProfile Profile
-			for id, b := range mgr.Bots {
-				if b != nil && b.Running {
-					activeBot = b
-					activeProfile = mgr.Profiles[id]
-					break
-				}
-			}
-			mgr.mu.RUnlock()
-
-			if activeBot == nil {
+			statuses := mgr.GetAllStatuses()
+			if len(statuses) == 0 {
 				continue
 			}
 
-			mapW, mapH := 400, 400
-			if activeBot.CurrentField != nil {
-				if activeBot.CurrentField.Width > 0 {
-					mapW = activeBot.CurrentField.Width
-				}
-				if activeBot.CurrentField.Height > 0 {
-					mapH = activeBot.CurrentField.Height
-				}
-			}
-
-			charName := activeBot.CharName
-			if charName == "" {
-				charName = activeProfile.Name
-			}
-			jobClass := activeBot.JobClass
-			if jobClass == "" {
-				jobClass = "Novice"
-			}
-
-			statusText := "🔍 ลาดตระเวน"
-			if activeBot.ReturningToMerchant {
-				statusText = fmt.Sprintf("📦 ไปหาแม่ค้า %s", activeProfile.MerchantName)
-			} else if NormalizeMapName(activeBot.CurrentMap) != NormalizeMapName(activeProfile.LockMap) {
-				statusText = fmt.Sprintf("🧭 เดินทางสู่ %s", activeProfile.LockMap)
-			} else if activeBot.TargetGID > 0 {
-				statusText = fmt.Sprintf("⚔️ ตีมอน #%d", activeBot.TargetGID)
-			} else if activeBot.AutoHuntActive {
-				statusText = "⚔️ กำลังฟาร์ม"
-			}
-
-			payload := ROPayload{
-				CharName:   charName,
-				JobClass:   jobClass,
-				BaseLevel:  activeBot.BaseLevel,
-				JobLevel:   activeBot.JobLevel,
-				HP:         activeBot.HP,
-				MaxHP:      activeBot.MaxHP,
-				SP:         activeBot.SP,
-				MaxSP:      activeBot.MaxSP,
-				CurrentMap: strings.TrimSuffix(NormalizeMapName(activeBot.CurrentMap), ".gat"),
-				CurrentX:   activeBot.CurrentX,
-				CurrentY:   activeBot.CurrentY,
-				Zeny:       activeBot.Zeny,
-				StatusText: statusText,
-				MapWidth:   mapW,
-				MapHeight:  mapH,
-			}
-
-			bodyBytes, err := json.Marshal(payload)
+			bodyBytes, err := json.Marshal(statuses)
 			if err != nil {
 				continue
 			}
@@ -148,7 +70,15 @@ func StartHUDPusher(mgr *BotManager, endpoint string) {
 				tx := cmdResp.Command.X
 				ty := cmdResp.Command.Y
 				fmt.Printf("\n🕹️ [Remote HUD] ได้รับคำสั่งคลิกเดินจากหน้าเว็บ -> พิกัด (%d, %d)\n", tx, ty)
-				_ = activeBot.sendMapPacket(BuildMove(tx, ty))
+
+				mgr.mu.RLock()
+				for _, b := range mgr.Bots {
+					if b != nil && b.Running {
+						_ = b.sendMapPacket(BuildMove(tx, ty))
+						break
+					}
+				}
+				mgr.mu.RUnlock()
 			}
 		}
 	}()
