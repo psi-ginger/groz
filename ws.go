@@ -1,86 +1,58 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"net/http"
+	"net"
 	"time"
-
-	"nhooyr.io/websocket"
 )
 
+const TargetServerHost = "15.235.236.242"
+
 type WsConn struct {
-	conn *websocket.Conn
-	ctx  context.Context
+	conn net.Conn
 }
 
-// DialWs เชื่อมต่อตรงไปยัง WSS Tunnel ของ Rozclub โดยไม่ต้องใช้บริดจ์
+// DialWs เชื่อมต่อตรงไปยัง Rozclub VPS Server (15.235.236.242) ผ่าน Native TCP Socket
 func DialWs(port int) (*WsConn, error) {
-	targetHost := "play.rozclub.com"
-	wsURL := fmt.Sprintf("wss://%s/ws/127.0.0.1:%d", targetHost, port)
-
-	opts := &websocket.DialOptions{
-		HTTPHeader: http.Header{
-			"Origin":     []string{fmt.Sprintf("https://%s", targetHost)},
-			"User-Agent": []string{"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-		},
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-	defer cancel()
-
-	conn, _, err := websocket.Dial(ctx, wsURL, opts)
+	addr := fmt.Sprintf("%s:%d", TargetServerHost, port)
+	conn, err := net.DialTimeout("tcp", addr, 8*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("dial WSS failed (%s): %w", wsURL, err)
+		return nil, fmt.Errorf("dial TCP failed (%s): %w", addr, err)
 	}
 
-	// Unlimit read message size
-	conn.SetReadLimit(65536)
-
-	wsConn := &WsConn{
-		conn: conn,
-		ctx:  context.Background(),
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		_ = tcpConn.SetNoDelay(true)
+		_ = tcpConn.SetKeepAlive(true)
+		_ = tcpConn.SetKeepAlivePeriod(10 * time.Second)
 	}
-	wsConn.StartTransportPing()
-	return wsConn, nil
-}
 
-func (w *WsConn) StartTransportPing() {
-	go func() {
-		ticker := time.NewTicker(25 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-w.ctx.Done():
-				return
-			case <-ticker.C:
-				pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_ = w.conn.Ping(pingCtx)
-				cancel()
-			}
-		}
-	}()
+	return &WsConn{conn: conn}, nil
 }
 
 func (w *WsConn) Write(p []byte) (int, error) {
-	ctx, cancel := context.WithTimeout(w.ctx, 5*time.Second)
-	defer cancel()
-
-	err := w.conn.Write(ctx, websocket.MessageBinary, p)
-	if err != nil {
-		return 0, err
+	if w.conn == nil {
+		return 0, fmt.Errorf("connection is nil")
 	}
-	return len(p), nil
+	_ = w.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	return w.conn.Write(p)
 }
 
 func (w *WsConn) Read() ([]byte, error) {
-	_, data, err := w.conn.Read(w.ctx)
+	if w.conn == nil {
+		return nil, fmt.Errorf("connection is nil")
+	}
+	buf := make([]byte, 65536)
+	_ = w.conn.SetReadDeadline(time.Time{}) // ไม่มี read timeout
+	n, err := w.conn.Read(buf)
 	if err != nil {
 		return nil, err
 	}
-	return data, nil
+	return buf[:n], nil
 }
 
 func (w *WsConn) Close() error {
-	return w.conn.Close(websocket.StatusNormalClosure, "disconnecting")
+	if w.conn != nil {
+		return w.conn.Close()
+	}
+	return nil
 }

@@ -16,8 +16,8 @@ func main() {
 	StartWebServer(mgr, 8080)
 	StartHUDPusher(mgr, "")
 
-	// เริ่มรันบอททุกตัวที่ตั้ง enabled: true ใน profiles/
-	mgr.StartAll()
+	// ปิด auto-start เพื่อรอรับคำสั่งเปิดบอทผ่าน Web Dashboard
+	// mgr.StartAll()
 
 	// รอรับสัญญาณปิดโปรแกรมอย่างปลอดภัย
 	sigChan := make(chan os.Signal, 1)
