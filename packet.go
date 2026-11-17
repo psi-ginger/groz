@@ -258,6 +258,40 @@ func BuildAddSkill(skillID uint16) []byte {
 	return pkt
 }
 
+// BuildTalk (0x0090 CZ_CONTACTNPC: 7 bytes: 2B header + 4B GID + 1B Type)
+func BuildTalk(npcGID uint32) []byte {
+	pkt := make([]byte, 7)
+	binary.LittleEndian.PutUint16(pkt[0:2], 0x0090)
+	binary.LittleEndian.PutUint32(pkt[2:6], npcGID)
+	pkt[6] = 1
+	return pkt
+}
+
+// BuildTalkContinue (0x00B9 CZ_REQNAME: 6 bytes: 2B header + 4B GID)
+func BuildTalkContinue(npcGID uint32) []byte {
+	pkt := make([]byte, 6)
+	binary.LittleEndian.PutUint16(pkt[0:2], 0x00B9)
+	binary.LittleEndian.PutUint32(pkt[2:6], npcGID)
+	return pkt
+}
+
+// BuildTalkResponse (0x00B8 CZ_REQ_NEXT_SCRIPT: 7 bytes: 2B header + 4B GID + 1B SelectIndex)
+func BuildTalkResponse(npcGID uint32, response byte) []byte {
+	pkt := make([]byte, 7)
+	binary.LittleEndian.PutUint16(pkt[0:2], 0x00B8)
+	binary.LittleEndian.PutUint32(pkt[2:6], npcGID)
+	pkt[6] = response
+	return pkt
+}
+
+// BuildTalkCancel (0x0146 / 0x00B8 cancel: 6 bytes: 2B header + 4B GID)
+func BuildTalkCancel(npcGID uint32) []byte {
+	pkt := make([]byte, 6)
+	binary.LittleEndian.PutUint16(pkt[0:2], 0x0146)
+	binary.LittleEndian.PutUint32(pkt[2:6], npcGID)
+	return pkt
+}
+
 // BuildRozPacket (0x0CF0, 9 + N bytes)
 func BuildRozPacket(op byte, payload string) []byte {
 	payloadBytes := []byte(payload)

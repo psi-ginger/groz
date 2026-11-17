@@ -40,6 +40,9 @@ func (b *SoloBot) handleMapPacket(pktID uint16, packet []byte) {
 		b.currentY = newY
 		if isMapChanged {
 			b.currentField = nil
+			b.ChannelNpcFound = false
+			b.ChannelNpcGID = 0
+			b.ChannelTalkStep = 0
 			fmt.Printf("\n[🌀 Map Move 0x0091] เปลี่ยนแมพสู่ %s ที่ (%d, %d)...\n", mapNameRaw, newX, newY)
 			_ = b.sendMapPacket(BuildMapLoaded())
 			_ = b.sendMapPacket(BuildBlockingCancel())
@@ -58,6 +61,9 @@ func (b *SoloBot) handleMapPacket(pktID uint16, packet []byte) {
 		b.currentY = newY
 		if isMapChanged {
 			b.currentField = nil
+			b.ChannelNpcFound = false
+			b.ChannelNpcGID = 0
+			b.ChannelTalkStep = 0
 			fmt.Printf("\n[🌀 Map Move 0x0092] เปลี่ยนแมพข้ามเซิร์ฟเวอร์สู่ %s ที่ (%d, %d)...\n", mapNameRaw, newX, newY)
 			_ = b.sendMapPacket(BuildMapLoaded())
 			_ = b.sendMapPacket(BuildBlockingCancel())
@@ -104,17 +110,67 @@ func (b *SoloBot) handleMapPacket(pktID uint16, packet []byte) {
 		return
 	}
 
-	// Auto-Discovery แม่ค้า (0x09FF, 0x0857, 0x09DD, 0x0915)
+	// Auto-Discovery แม่ค้า & เครื่องย้ายช่อง (0x09FF, 0x0857, 0x09DD, 0x0915)
 	if (pktID == 0x09FF || pktID == 0x0857 || pktID == 0x09DD || pktID == 0x0915) && len(packet) >= 9 {
 		actorID := binary.LittleEndian.Uint32(packet[5:9])
-		if b.cfg.MerchantName != "" {
-			chunk := string(packet[5:])
-			if strings.Contains(chunk, b.cfg.MerchantName) {
-				if b.trade != nil && b.trade.MerchantGID != actorID {
-					b.trade.MerchantGID = actorID
-					fmt.Printf("\n[👀 Auto-Discovery] สแกนพบแม่ค้า '%s' ในจอ! บันทึกรหัสประจำตัว (GID: %d) ทันที\n", b.cfg.MerchantName, actorID)
-				}
+		chunk := string(packet[5:])
+
+		// ดักจับแม่ค้า
+		if b.cfg.MerchantName != "" && strings.Contains(chunk, b.cfg.MerchantName) {
+			if b.trade != nil && b.trade.MerchantGID != actorID {
+				b.trade.MerchantGID = actorID
+				fmt.Printf("\n[👀 Auto-Discovery] สแกนพบแม่ค้า '%s' ในจอ! บันทึกรหัสประจำตัว (GID: %d) ทันที\n", b.cfg.MerchantName, actorID)
 			}
+		}
+
+		// ดักจับเครื่องย้ายช่อง
+		if strings.Contains(chunk, "เครื่องย้ายช่อง") {
+			if b.ChannelNpcGID != actorID {
+				b.ChannelNpcGID = actorID
+				b.ChannelNpcFound = true
+				fmt.Printf("\n[📡 Auto-Discovery] ตรวจพบ 'เครื่องย้ายช่อง' ในจอ! (GID: %d)\n", actorID)
+			}
+		}
+		return
+	}
+
+	// NPC Talk Message (0x00B4)
+	if pktID == 0x00B4 && len(packet) >= 8 {
+		npcID := binary.LittleEndian.Uint32(packet[4:8])
+		msg := string(bytes.TrimRight(packet[8:], "\x00"))
+		fmt.Printf("[💬 NPC Msg (0x00B4)] GID %d: %s\n", npcID, msg)
+		return
+	}
+
+	// NPC Talk Continue / Next Button (0x00B5)
+	if pktID == 0x00B5 && len(packet) >= 6 {
+		npcID := binary.LittleEndian.Uint32(packet[2:6])
+		fmt.Printf("[⏭️ NPC Next (0x00B5)] GID %d ส่งปุ่ม Next มา! กำลังกดยืนยัน (0x00B9)...\n", npcID)
+		if b.ChannelNpcFound && (b.ChannelNpcGID == npcID || b.ChannelNpcGID == 0) {
+			b.ChannelTalkStep = 1
+			_ = b.sendMapPacket(BuildTalkContinue(npcID))
+		}
+		return
+	}
+
+	// NPC Talk Close Button (0x00B6)
+	if pktID == 0x00B6 && len(packet) >= 6 {
+		npcID := binary.LittleEndian.Uint32(packet[2:6])
+		fmt.Printf("[❌ NPC Close (0x00B6)] ไดอะล็อก NPC GID %d ปิดลง\n", npcID)
+		b.ChannelTalkStep = 0
+		return
+	}
+
+	// NPC Talk Select Menu (0x00B7)
+	if pktID == 0x00B7 && len(packet) >= 8 {
+		npcID := binary.LittleEndian.Uint32(packet[4:8])
+		menuStr := string(bytes.TrimRight(packet[8:], "\x00"))
+		fmt.Printf("[📋 NPC Menu (0x00B7)] GID %d ตัวเลือก: %s\n", npcID, menuStr)
+		if b.ChannelNpcFound && (b.ChannelNpcGID == npcID || b.ChannelNpcGID == 0) {
+			// ตอบเลือกตัวเลือกที่ 1 (ช่อง B)
+			fmt.Printf("[⚡ NPC Select] ส่งคำตอบเลือก 'ช่อง B' (Menu Index: 1) ไปยัง NPC %d\n", npcID)
+			_ = b.sendMapPacket(BuildTalkResponse(npcID, 1))
+			b.ChannelTalkStep = 0
 		}
 		return
 	}
