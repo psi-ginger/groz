@@ -9,6 +9,58 @@ import (
 	"time"
 )
 
+func (b *SoloBot) checkAutoStat() {
+	if b.cfg.AutoStat == "" {
+		return
+	}
+	entries := strings.Split(b.cfg.AutoStat, ",")
+	for _, entry := range entries {
+		parts := strings.Fields(strings.TrimSpace(entry))
+		if len(parts) >= 2 {
+			name := strings.ToLower(parts[0])
+			target, _ := strconv.Atoi(parts[1])
+			var statID uint16
+			switch name {
+			case "str":
+				statID = StatSTR
+			case "agi":
+				statID = StatAGI
+			case "vit":
+				statID = StatVIT
+			case "int":
+				statID = StatINT
+			case "dex":
+				statID = StatDEX
+			case "luk":
+				statID = StatLUK
+			}
+			if statID > 0 && target > 0 {
+				fmt.Printf("[✨ Level Up] ทริกเกอร์อัป Status อัตโนมัติ: %s (ID: %d)\n", name, statID)
+				_ = b.sendMapPacket(BuildAddStatus(statID))
+				break
+			}
+		}
+	}
+}
+
+func (b *SoloBot) checkAutoSkill() {
+	if b.cfg.AutoSkill == "" {
+		return
+	}
+	entries := strings.Split(b.cfg.AutoSkill, ",")
+	for _, entry := range entries {
+		parts := strings.Fields(strings.TrimSpace(entry))
+		if len(parts) >= 1 {
+			skid, _ := strconv.Atoi(parts[0])
+			if skid > 0 {
+				fmt.Printf("[✨ Level Up] ทริกเกอร์อัป Skill อัตโนมัติ: ID %d\n", skid)
+				_ = b.sendMapPacket(BuildAddSkill(uint16(skid)))
+				break
+			}
+		}
+	}
+}
+
 func (b *SoloBot) checkWeightAndSupplies() {
 	if b.MaxWeight <= 0 {
 		return

@@ -231,6 +231,16 @@ func BuildUseItem(index uint16) []byte {
 	return buf.Bytes()
 }
 
+// Stat ID Constants
+const (
+	StatSTR = 13 // 0x0D
+	StatAGI = 14 // 0x0E
+	StatVIT = 15 // 0x0F
+	StatINT = 16 // 0x10
+	StatDEX = 17 // 0x11
+	StatLUK = 18 // 0x12
+)
+
 // BuildAddStatus (0x00BB CZ_STATUS_CHANGE: 5 bytes: 2B header + 2B statID + 1B amount)
 func BuildAddStatus(statID uint16) []byte {
 	pkt := make([]byte, 5)
