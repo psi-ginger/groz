@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -8,25 +9,25 @@ import (
 )
 
 func main() {
-	fmt.Println("==================================================")
-	fmt.Println(" 🚀 Rozclub Native Go Multi-Bot Manager")
-	fmt.Println("==================================================")
+	cfgFile := flag.String("c", "config.json", "Config file path")
+	flag.Parse()
 
-	mgr := NewBotManager("profiles")
-	StartWebServer(mgr, 8080)
-	StartHUDPusher(mgr, "")
+	cfg := LoadConfig(*cfgFile)
+	bot := NewSoloBot(cfg)
 
-	// ปิด auto-start เพื่อรอรับคำสั่งเปิดบอทผ่าน Web Dashboard
-	// mgr.StartAll()
-
-	// รอรับสัญญาณปิดโปรแกรมอย่างปลอดภัย
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	<-sigChan
+	go func() {
+		<-sigChan
+		fmt.Println("\n\n[!] กำลังปิดบอทอย่างปลอดภัย...")
+		bot.running = false
+		if bot.mapConn != nil {
+			_ = bot.mapConn.Close()
+		}
+		os.Exit(0)
+	}()
 
-	fmt.Println("\n[!] กำลังปิดระบบบอททั้งหมด...")
-	for _, bot := range mgr.Bots {
-		bot.Stop()
+	if err := bot.Run(); err != nil {
+		fmt.Printf("\n[❌ เกิดข้อผิดพลาด] %v\n", err)
 	}
-	fmt.Println("บอทปิดการทำงานเรียบร้อยแล้วค่ะ")
 }

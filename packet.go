@@ -44,31 +44,34 @@ func LoadPacketLengths(paths ...string) map[uint16]int {
 	return table
 }
 
-// Packet IDs
+// Packet OpCodes
 const (
-	PacketMasterLogin = 0x0064
-	PacketCharLogin   = 0x0065
-	PacketCharSelect  = 0x0066
-	PacketMapLogin    = 0x0436 // LunarisRO / Rozclub 20250716 ENTER2
-	PacketMapLoaded   = 0x007D // CZ.NOTIFY_ACTORINIT (แจ้งแมพว่าโหลดเสร็จแล้ว)
-	PacketBlockingCancel = 0x0447 // CZ.BLOCKING_PLAY_CANCEL (ปลดล็อคตัวละครให้ขยับและตีมอนได้)
-	PacketRozSend     = 0x0CF0 // 3312: Rozclub In-Game Auto Bot
-	PacketRozRecv     = 0x0CF1 // 3313: Rozclub In-Game Auto Bot Response
+	PacketMasterLogin    = 0x0064
+	PacketCharLogin      = 0x0065
+	PacketCharSelect     = 0x0066
+	PacketMapLogin       = 0x0436 // LunarisRO / Rozclub 20250716 ENTER2 (23 bytes)
+	PacketMapLoaded      = 0x007D // CZ.NOTIFY_ACTORINIT
+	PacketBlockingCancel = 0x0447 // CZ.BLOCKING_PLAY_CANCEL
+	PacketMove           = 0x035F
+	PacketAttack         = 0x0437
+	PacketTakeItem       = 0x0362
+	PacketSync           = 0x0360
+	PacketPingLive       = 0x0B1C
+	PacketRozSend        = 0x0CF0
+	PacketRozRecv        = 0x0CF1
 )
 
-// OpCodes for Packet 0x0CF0
 const (
-	OpConfig byte = 1 // บันทึกการตั้งค่า
-	OpPing   byte = 2 // Heartbeat เช็คสถานะ
-	OpStart  byte = 3 // สั่งเปิดบอท ("full" = ล่าอัตโนมัติ, "support" = ปั๊มยา)
-	OpStop   byte = 4 // สั่งปิดบอท ("")
+	OpConfig byte = 1
+	OpPing   byte = 2
+	OpStart  byte = 3
+	OpStop   byte = 4
 )
 
-// BuildMasterLogin (0x0064, 55 bytes)
 func BuildMasterLogin(version uint32, username, password string, masterVersion byte) []byte {
 	buf := new(bytes.Buffer)
 	binary.Write(buf, binary.LittleEndian, uint16(PacketMasterLogin))
-	binary.Write(buf, binary.LittleEndian, version) // 55 for Rozclub
+	binary.Write(buf, binary.LittleEndian, version)
 
 	userBytes := make([]byte, 24)
 	copy(userBytes, []byte(username))
@@ -78,23 +81,21 @@ func BuildMasterLogin(version uint32, username, password string, masterVersion b
 	copy(passBytes, []byte(password))
 	buf.Write(passBytes)
 
-	buf.WriteByte(masterVersion) // 0
+	buf.WriteByte(masterVersion)
 	return buf.Bytes()
 }
 
-// BuildCharLogin (0x0065, 17 bytes)
 func BuildCharLogin(accountID, sessionID1, sessionID2 uint32, sex byte) []byte {
 	buf := new(bytes.Buffer)
 	binary.Write(buf, binary.LittleEndian, uint16(PacketCharLogin))
 	binary.Write(buf, binary.LittleEndian, accountID)
 	binary.Write(buf, binary.LittleEndian, sessionID1)
 	binary.Write(buf, binary.LittleEndian, sessionID2)
-	binary.Write(buf, binary.LittleEndian, uint16(0)) // userLevel (2 bytes)
-	buf.WriteByte(sex)                              // sex (1 byte)
+	binary.Write(buf, binary.LittleEndian, uint16(0))
+	buf.WriteByte(sex)
 	return buf.Bytes()
 }
 
-// BuildCharSelect (0x0066, 3 bytes)
 func BuildCharSelect(slot byte) []byte {
 	buf := new(bytes.Buffer)
 	binary.Write(buf, binary.LittleEndian, uint16(PacketCharSelect))
@@ -103,93 +104,68 @@ func BuildCharSelect(slot byte) []byte {
 }
 
 // BuildMapLogin (0x0436, 23 bytes)
-// AccountID (4) + CharID (4) + AuthCode/SessionID (4) + Unknown (4) + Tick (4) + Sex (1) = 23 bytes
+// Opcode (2) + AccountID (4) + CharID (4) + SessionID (4) + Unknown (4) + Tick (4) + Sex (1) = 23 bytes
 func BuildMapLogin(accountID, charID, sessionID uint32, sex byte) []byte {
 	buf := new(bytes.Buffer)
 	binary.Write(buf, binary.LittleEndian, uint16(PacketMapLogin))
 	binary.Write(buf, binary.LittleEndian, accountID)
 	binary.Write(buf, binary.LittleEndian, charID)
 	binary.Write(buf, binary.LittleEndian, sessionID)
-	binary.Write(buf, binary.LittleEndian, uint32(0)) // unknown
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // unknown (4 bytes)
 	tick := uint32(time.Now().UnixMilli())
 	binary.Write(buf, binary.LittleEndian, tick)
 	buf.WriteByte(sex)
 	return buf.Bytes()
 }
 
-// BuildMapLoaded (0x007D, 2 bytes)
 func BuildMapLoaded() []byte {
 	buf := new(bytes.Buffer)
 	binary.Write(buf, binary.LittleEndian, uint16(PacketMapLoaded))
 	return buf.Bytes()
 }
 
-// BuildBlockingPlayCancel (0x0447, 2 bytes)
-// ปลดล็อคสถานะแช่แข็งหน้าจอ ให้เซิร์ฟเวอร์อนุญาตให้ตัวละครเดินและตีมอนได้
-func BuildBlockingPlayCancel() []byte {
+func BuildBlockingCancel() []byte {
 	buf := new(bytes.Buffer)
 	binary.Write(buf, binary.LittleEndian, uint16(PacketBlockingCancel))
 	return buf.Bytes()
 }
 
-// BuildRozPacket (0x0CF0, 9 + N bytes)
-func BuildRozPacket(op byte, payload string) []byte {
-	payloadBytes := []byte(payload)
-	totalLen := uint16(9 + len(payloadBytes))
-
+func BuildMove(x, y int) []byte {
 	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.LittleEndian, uint16(PacketRozSend))
-	binary.Write(buf, binary.LittleEndian, totalLen)
-	buf.WriteString("THAA")
-	buf.WriteByte(op)
-	buf.Write(payloadBytes)
-
+	binary.Write(buf, binary.LittleEndian, uint16(PacketMove))
+	var c0 = byte((x >> 2) & 0xFF)
+	var c1 = byte(((x & 0x03) << 6) | ((y >> 4) & 0x3F))
+	var c2 = byte((y & 0x0F) << 4)
+	buf.Write([]byte{c0, c1, c2})
 	return buf.Bytes()
 }
 
-const (
-	PacketPingLiveServer = 0x0B19 // ZC_PING_LIVE (2 bytes)
-	PacketPingLiveClient = 0x0B1C // CZ_PING_LIVE (2 bytes)
-)
-
-// BuildPingLive (0x0B1C, 2 bytes) ตอบกลับ ZC_PING_LIVE ทันที
-func BuildPingLive() []byte {
-	return []byte{0x1C, 0x0B}
+func BuildAttack(targetGID uint32) []byte {
+	buf := new(bytes.Buffer)
+	binary.Write(buf, binary.LittleEndian, uint16(PacketAttack))
+	binary.Write(buf, binary.LittleEndian, targetGID)
+	buf.WriteByte(7) // 7 = Continuous attack
+	return buf.Bytes()
 }
 
-// BuildSync (0x0360, 6 bytes: 2 bytes header + 4 bytes tick)
-// จำเป็นอย่างยิ่งสำหรับเลี้ยงสาย Map Server ไม่ให้โดน Timeout ตัดหลุด
+func BuildTakeItem(itemGID uint32) []byte {
+	buf := new(bytes.Buffer)
+	binary.Write(buf, binary.LittleEndian, uint16(PacketTakeItem))
+	binary.Write(buf, binary.LittleEndian, itemGID)
+	return buf.Bytes()
+}
+
 func BuildSync(tick uint32) []byte {
 	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.LittleEndian, uint16(0x0360))
+	binary.Write(buf, binary.LittleEndian, uint16(PacketSync))
 	binary.Write(buf, binary.LittleEndian, tick)
 	return buf.Bytes()
 }
 
-// BuildMove (0x035F, 5 bytes: 2 bytes header + 3 bytes packed coords)
-// หมายเหตุ: ใน Online.js ของ Rozclub (PacketVer >= 20180307) ใช้ REQUEST_MOVE2 (863 = 0x035F)
-func BuildMove(x, y int) []byte {
+func BuildPingLive() []byte {
 	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.LittleEndian, uint16(0x035F))
-
-	// RO 24-bit Coordinate Packing: 10 bits X + 10 bits Y + 4 bits padding
-	b0 := byte((x >> 2) & 0xFF)
-	b1 := byte(((x & 0x03) << 6) | ((y >> 4) & 0x3F))
-	b2 := byte((y & 0x0F) << 4)
-
-	buf.Write([]byte{b0, b1, b2})
+	binary.Write(buf, binary.LittleEndian, uint16(PacketPingLive))
 	return buf.Bytes()
-}
-
-func DumpHex(data []byte) string {
-	var s string
-	for i, b := range data {
-		if i > 0 {
-			s += " "
-		}
-		s += fmt.Sprintf("%02X", b)
-	}
-	return s
 }
 
 // BuildDealInitiate (0x00E4, 6 bytes: 2 bytes header + 4 bytes Target GID)
@@ -255,20 +231,6 @@ func BuildUseItem(index uint16) []byte {
 	return buf.Bytes()
 }
 
-// BuildRestart (0x00B2 CZ_RESTART: 2 bytes header + 1 byte type: 0 = กลับจุดเซฟ)
-func BuildRestart(respawnType byte) []byte {
-	return []byte{0xB2, 0x00, respawnType}
-}
-
-const (
-	StatSTR = 13 // 0x0D
-	StatAGI = 14 // 0x0E
-	StatVIT = 15 // 0x0F
-	StatINT = 16 // 0x10
-	StatDEX = 17 // 0x11
-	StatLUK = 18 // 0x12
-)
-
 // BuildAddStatus (0x00BB CZ_STATUS_CHANGE: 5 bytes: 2B header + 2B statID + 1B amount)
 func BuildAddStatus(statID uint16) []byte {
 	pkt := make([]byte, 5)
@@ -285,3 +247,67 @@ func BuildAddSkill(skillID uint16) []byte {
 	binary.LittleEndian.PutUint16(pkt[2:4], skillID)
 	return pkt
 }
+
+// BuildRozPacket (0x0CF0, 9 + N bytes)
+func BuildRozPacket(op byte, payload string) []byte {
+	payloadBytes := []byte(payload)
+	totalLen := uint16(9 + len(payloadBytes))
+
+	buf := new(bytes.Buffer)
+	binary.Write(buf, binary.LittleEndian, uint16(PacketRozSend))
+	binary.Write(buf, binary.LittleEndian, totalLen)
+	buf.WriteString("THAA")
+	buf.WriteByte(op)
+	buf.Write(payloadBytes)
+	return buf.Bytes()
+}
+
+// SolveClientGuard calculates the Rozclub client integrity response for challenge c
+func SolveClientGuard(cHex string) string {
+	var edi uint32
+	fmt.Sscanf(cHex, "%x", &edi)
+
+	key := []byte("R0z-TH:9f1c-77ab-Guard!k3y#2026")
+	const prime = uint32(0x1000193)
+
+	// Pass 1: FNV-1a on Secret Key
+	edx := uint32(0x811c9dc5)
+	for _, b := range key {
+		edx = (edx ^ uint32(b)) * prime
+	}
+
+	// Pass 2: FNV-1a on 4 bytes of challenge
+	for i := 0; i < 4; i++ {
+		b := uint32((edi >> (i * 8)) & 0xFF)
+		edx = (edx ^ b) * prime
+	}
+
+	// Pass 3: FNV-1a on Secret Key XOR 0x5A
+	for _, b := range key {
+		edx = (edx ^ uint32(b^0x5A)) * prime
+	}
+
+	// Pass 4: Final mixing
+	eax := edx >> 15
+	edx = (edx ^ eax) * 0x2C1B3C6D
+	eax = edx >> 12
+	eax = (eax ^ edx) * 0x297A2D39
+	edx = eax >> 15
+	r := eax ^ edx
+
+	// Constants matching real client environment:
+	// h = 0x838FA736 (local hardware ID)
+	// d = 0x796F19F8 (FNV-1a checksum of genuine d3d9.dll)
+	const hVal = uint32(0x838FA736)
+	const dVal = uint32(0x796F19F8)
+
+	return fmt.Sprintf("r=%08X\nh=%08X\nv=3\nd=%08X\n", r, hVal, dVal)
+}
+
+// BuildGuardResponse builds the 0x0CF0 type 0x1E response packet
+func BuildGuardResponse(cHex string) []byte {
+	payload := SolveClientGuard(cHex)
+	return BuildRozPacket(0x1E, payload)
+}
+
+

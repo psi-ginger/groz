@@ -210,7 +210,7 @@ const (
 // TradeManager คลาสควบคุมการเดินทางกลับเมืองและดีลกับแม่ค้าตาม Step 1-5
 type TradeManager struct {
 	mu         sync.RWMutex
-	Client     *BotClient
+	Bot        *SoloBot
 	Config     *TradeConfig
 	ConfigFile string
 
@@ -233,10 +233,10 @@ type TradeManager struct {
 	RestockRequired bool
 }
 
-func NewTradeManager(client *BotClient) *TradeManager {
+func NewTradeManager(bot *SoloBot) *TradeManager {
 	cfgFile := "trade_config.json"
 	return &TradeManager{
-		Client:          client,
+		Bot:             bot,
 		ConfigFile:      cfgFile,
 		Config:          LoadTradeConfig(cfgFile),
 		State:           TradeIdle,
@@ -260,14 +260,14 @@ func (tm *TradeManager) CheckWeightAndReturn() bool {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 
-	maxW := tm.Client.MaxWeight
+	maxW := tm.Bot.MaxWeight
 	if maxW <= 0 {
 		maxW = 2000
 	}
-	weightPct := (tm.Client.Weight * 100) / maxW
+	weightPct := (tm.Bot.Weight * 100) / maxW
 
 	// ถ้าน้ำหนักเกิน 50% หรือยาหมด
-	hpPotions := tm.Client.Inventory.CountItem(501) // Red Potion
+	hpPotions := tm.Bot.Inventory.CountItem(501) // Red Potion
 	needRestock := hpPotions < tm.MinHPPotions
 
 	if weightPct < 50 && !needRestock {
@@ -280,10 +280,10 @@ func (tm *TradeManager) CheckWeightAndReturn() bool {
 	fmt.Printf("[📦 Town Cycle] น้ำหนัก %d%% (ยาเหลือ %d) -> เริ่มกระบวนการกลับเมืองไปหาแม่ค้า\n", weightPct, hpPotions)
 
 	// ใช้ Butterfly Wing (Item ID: 602)
-	bwingIdx, hasBwing := tm.Client.Inventory.FindItemIndex(602)
+	bwingIdx, hasBwing := tm.Bot.Inventory.FindItemIndex(602)
 	if hasBwing {
 		fmt.Println("[📦 Town Cycle] กดใช้ Butterfly Wing วาร์ปกลับจุดเซฟ...")
-		tm.Client.sendMapPacket(BuildUseItem(bwingIdx))
+		tm.Bot.sendMapPacket(BuildUseItem(bwingIdx))
 	} else {
 		fmt.Println("[📦 Town Cycle] ไม่มี Butterfly Wing! ใช้ Router เดินย้อนวาร์ปกลับเมือง...")
 	}
@@ -303,26 +303,26 @@ func (tm *TradeManager) StartDealSession(merchantGID uint32) {
 	tm.LastStateChange = time.Now()
 
 	// ดึงรายการของที่จะเทรดตาม config
-	tm.PendingTradeList = tm.Client.Inventory.GetItemsToTrade(tm.Config)
+	tm.PendingTradeList = tm.Bot.Inventory.GetItemsToTrade(tm.Config)
 	totalItems := len(tm.PendingTradeList)
 	totalRounds := int(math.Ceil(float64(totalItems) / 10.0))
 
 	fmt.Printf("[🤝 Trade] ยื่นดีลแม่ค้า (GID: %d) | ในกระเป๋ามี %d ชนิด | จะส่งมอบ %d ชนิด (ต้องดีล %d รอบ)\n",
-		merchantGID, len(tm.Client.Inventory.Items), totalItems, totalRounds)
+		merchantGID, len(tm.Bot.Inventory.Items), totalItems, totalRounds)
 	if len(tm.PendingTradeList) > 0 {
 		fmt.Printf("   [📦 รายการที่จะโอนให้แม่ค้าในเซ็ตนี้]:\n")
 		for _, it := range tm.PendingTradeList {
 			fmt.Printf("      -> Index %d: ID %d x%d (Type %d)\n", it.Index, it.NameID, it.Amount, it.Type)
 		}
-	} else if len(tm.Client.Inventory.Items) > 0 {
+	} else if len(tm.Bot.Inventory.Items) > 0 {
 		fmt.Printf("   [ℹ️ รายการในกระเป๋าที่ติดโควต้า keep_items / ของสวมใส่]:\n")
-		for _, it := range tm.Client.Inventory.Items {
+		for _, it := range tm.Bot.Inventory.Items {
 			fmt.Printf("      -> Index %d: ID %d x%d (Type %d, Equip %d)\n", it.Index, it.NameID, it.Amount, it.Type, it.Equipped)
 		}
 	}
 
 	// ส่งคำขอดีล (0x00E4)
-	tm.Client.sendMapPacket(BuildDealInitiate(merchantGID))
+	tm.Bot.sendMapPacket(BuildDealInitiate(merchantGID))
 }
 
 func (tm *TradeManager) IsActive() bool {
@@ -358,20 +358,20 @@ func (tm *TradeManager) ExecuteTradeStep3And4() {
 	}
 
 	merchant := tm.MerchantName
-	if merchant == "" && tm.Client != nil {
-		merchant = tm.Client.MerchantName
+	if merchant == "" && tm.Bot != nil {
+		merchant = tm.Bot.MerchantName
 	}
 
 	// Step 3: ถ้าต้องการยา/ลูกธนู ให้ PM สั่งแม่ค้า
 	if tm.RestockRequired && merchant != "" {
 		fmt.Printf("[💬 PM Restock] กระซิบหาแม่ค้า '%s': restock\n", merchant)
-		tm.Client.SendPM(merchant, "restock")
+		tm.Bot.SendPM(merchant, "restock")
 		time.Sleep(1 * time.Second) // รอให้แม่ค้าย้ายของใส่หน้าต่างดีล
 	}
 
 	// ถ้า PendingTradeList ยังว่างอยู่ ให้ดึงไอเทมที่จะเทรดทั้งหมดจากกระเป๋าตาม config
 	if len(tm.PendingTradeList) == 0 {
-		tm.PendingTradeList = tm.Client.Inventory.GetItemsToTrade(tm.Config)
+		tm.PendingTradeList = tm.Bot.Inventory.GetItemsToTrade(tm.Config)
 	}
 
 	// Step 4: โอนขยะไม่เกิน 10 ชนิด
@@ -386,7 +386,7 @@ func (tm *TradeManager) ExecuteTradeStep3And4() {
 		fmt.Println("[ℹ️ Trade] ไม่มีไอเทมขยะที่ต้องส่งมอบในรอบนี้ กด Lock ดีลทันที")
 		tm.State = TradeWaitingLock
 		tm.LastStateChange = time.Now()
-		tm.Client.sendMapPacket(BuildDealFinalize())
+		tm.Bot.sendMapPacket(BuildDealFinalize())
 		return
 	}
 
@@ -396,7 +396,7 @@ func (tm *TradeManager) ExecuteTradeStep3And4() {
 	fmt.Printf("[📤 Trade Step 4] กำลังโอนไอเทมขึ้นหน้าต่างดีล %d ชนิด...\n", len(tm.CurrentBatch))
 	for _, it := range tm.CurrentBatch {
 		fmt.Printf("   -> โอนไอเทม: ID %d (จำนวน %d ชิ้น)\n", it.NameID, it.Amount)
-		tm.Client.sendMapPacket(BuildDealAddItem(it.Index, uint32(it.Amount)))
+		tm.Bot.sendMapPacket(BuildDealAddItem(it.Index, uint32(it.Amount)))
 		time.Sleep(150 * time.Millisecond) // หน่วงเล็กน้อยเพื่อความเสถียร
 	}
 
@@ -404,7 +404,7 @@ func (tm *TradeManager) ExecuteTradeStep3And4() {
 	fmt.Println("[🔒 Trade Step 5] โอนครบแล้ว -> กด Lock ดีล (0x00EB)...")
 	tm.State = TradeWaitingLock
 	tm.LastStateChange = time.Now()
-	tm.Client.sendMapPacket(BuildDealFinalize())
+	tm.Bot.sendMapPacket(BuildDealFinalize())
 }
 
 // เมื่อฝั่งตรงข้ามกด Lock (0x00EC ZC_CONCLUDE_EXCHANGE)
@@ -424,7 +424,7 @@ func (tm *TradeManager) HandleDealOtherLocked() {
 		tm.State = TradeConfirming
 		tm.LastStateChange = time.Now()
 		fmt.Println("[✅ Trade Step 5] ยืนยันการแลกเปลี่ยนรอบสุดท้าย (0x00EF)...")
-		tm.Client.sendMapPacket(BuildDealTrade())
+		tm.Bot.sendMapPacket(BuildDealTrade())
 	}
 }
 
@@ -440,17 +440,17 @@ func (tm *TradeManager) HandleDealComplete() {
 
 	// ตัดไอเทมที่ส่งมอบสำเร็จออกจาก Inventory ในตัวบอท
 	for _, it := range tm.CurrentBatch {
-		tm.Client.Inventory.RemoveItem(it.Index, it.Amount)
+		tm.Bot.Inventory.RemoveItem(it.Index, it.Amount)
 	}
 	tm.CurrentBatch = nil
 
 	merchant := tm.MerchantName
-	if merchant == "" && tm.Client != nil {
-		merchant = tm.Client.MerchantName
+	if merchant == "" && tm.Bot != nil {
+		merchant = tm.Bot.MerchantName
 	}
 
 	// ตรวจสอบไอเทมที่ยังหลงเหลืออยู่ในกระเป๋า
-	remaining := tm.Client.Inventory.GetItemsToTrade(tm.Config)
+	remaining := tm.Bot.Inventory.GetItemsToTrade(tm.Config)
 	if len(remaining) > 0 {
 		tm.PendingTradeList = remaining
 		tm.State = TradeDealInitiating
@@ -462,7 +462,7 @@ func (tm *TradeManager) HandleDealComplete() {
 				tm.StartDealSession(tm.MerchantGID)
 			} else if merchant != "" {
 				rnd := rand.Intn(9000) + 1000
-				tm.Client.SendPM(merchant, fmt.Sprintf("deal %d", rnd))
+				tm.Bot.SendPM(merchant, fmt.Sprintf("deal %d", rnd))
 			}
 		}()
 	} else {
@@ -470,14 +470,14 @@ func (tm *TradeManager) HandleDealComplete() {
 		tm.PendingTradeList = nil
 		tm.State = TradeIdle
 		tm.LastStateChange = time.Now()
-		if tm.Client != nil {
-			tm.Client.ReturningToMerchant = false
+		if tm.Bot != nil {
+			tm.Bot.ReturningToMerchant = false
 		}
 		rnd := rand.Intn(9000) + 1000
 		msg := fmt.Sprintf("done %d", rnd)
 		fmt.Printf("[✨ Town Cycle Done] ส่ง PM '%s' หาแม่ค้า '%s' เรียบร้อย! ตัวเบาหวิว พร้อมเดินกลับ LockMap ฟาร์มต่อ!\n", msg, merchant)
 		if merchant != "" {
-			tm.Client.SendPM(merchant, msg)
+			tm.Bot.SendPM(merchant, msg)
 		}
 	}
 }
@@ -515,8 +515,8 @@ func (tm *TradeManager) CheckWatchdog() {
 		tm.PendingTradeList = nil
 		tm.CurrentBatch = nil
 		tm.LastStateChange = time.Now()
-		if tm.Client != nil {
-			_ = tm.Client.sendMapPacket(BuildDealCancel())
+		if tm.Bot != nil {
+			_ = tm.Bot.sendMapPacket(BuildDealCancel())
 		}
 		return
 	}
@@ -530,8 +530,8 @@ func (tm *TradeManager) CheckWatchdog() {
 		tm.PendingTradeList = nil
 		tm.CurrentBatch = nil
 		tm.LastStateChange = time.Now()
-		if tm.Client != nil {
-			_ = tm.Client.sendMapPacket(BuildDealCancel())
+		if tm.Bot != nil {
+			_ = tm.Bot.sendMapPacket(BuildDealCancel())
 		}
 		return
 	}
