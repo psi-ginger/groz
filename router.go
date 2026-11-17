@@ -20,10 +20,11 @@ type Portal struct {
 type PortalGraph struct {
 	Portals    map[string][]Portal
 	PortalsLOS map[string]map[string]int // Key: "map x y", Val: map["destX destY"] = distance
+	Cities     map[string]bool
 }
 
 // NormalizeMapName แปลงชื่อแมพช่องหรือชื่อย่อของ Rozclub ให้เป็นชื่อมาตรฐาน RO
-// เช่น pay_d00_b.gat -> pay_dun00, pay_d00_b -> pay_dun00, prt_f01_a -> prt_fild01, izlude_b -> izlude
+// เช่น pay_d00_b.gat -> pay_dun00, pay_d00_b -> pay_dun00, prt_f08_b -> prt_fild08, izlude_b -> izlude
 func NormalizeMapName(raw string) string {
 	if raw == "" {
 		return ""
@@ -34,14 +35,14 @@ func NormalizeMapName(raw string) string {
 	reChan := regexp.MustCompile(`_[a-z]$`)
 	base := reChan.ReplaceAllString(name, "")
 
-	// 2. แปลงชื่อย่อดันเจี้ยน เช่น _d00 -> _dun00
-	reDun := regexp.MustCompile(`_d(\d{2})$`)
+	// 2. แปลงชื่อย่อดันเจี้ยน เช่น _d00, d00 -> _dun00
+	reDun := regexp.MustCompile(`_?d(\d{2})$`)
 	if reDun.MatchString(base) {
 		base = reDun.ReplaceAllString(base, "_dun$1")
 	}
 
-	// 3. แปลงชื่อย่อฟิลด์ เช่น _f01 -> _fild01
-	reFild := regexp.MustCompile(`_f(\d{2})$`)
+	// 3. แปลงชื่อย่อฟิลด์ เช่น _f08, f08, _fild08 -> _fild08
+	reFild := regexp.MustCompile(`_?f(?:ild)?(\d{2})$`)
 	if reFild.MatchString(base) {
 		base = reFild.ReplaceAllString(base, "_fild$1")
 	}
@@ -53,6 +54,54 @@ func NormalizeMapName(raw string) string {
 	}
 
 	return base
+}
+
+func (g *PortalGraph) LoadCities(filenames ...string) error {
+	if g.Cities == nil {
+		g.Cities = make(map[string]bool)
+	}
+	var loaded bool
+	for _, fn := range filenames {
+		f, err := os.Open(fn)
+		if err != nil {
+			continue
+		}
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.Split(line, "#")
+			if len(parts) >= 1 {
+				rawMap := strings.TrimSpace(parts[0])
+				cityName := strings.TrimSuffix(strings.TrimSuffix(rawMap, ".rsw"), ".gat")
+				normCity := NormalizeMapName(cityName)
+				g.Cities[normCity] = true
+				g.Cities[cityName] = true
+			}
+		}
+		f.Close()
+		loaded = true
+		break
+	}
+	if !loaded {
+		// Fallback เมืองหลักถ้าหาไฟล์ไม่เจอ
+		fallbackCities := []string{"prontera", "izlude", "geffen", "payon", "morocc", "alberta", "aldebaran", "yuno", "comodo", "amatsu", "gonryun"}
+		for _, c := range fallbackCities {
+			g.Cities[c] = true
+		}
+	}
+	return nil
+}
+
+func (g *PortalGraph) IsCity(mapName string) bool {
+	if g == nil || g.Cities == nil {
+		return false
+	}
+	norm := NormalizeMapName(mapName)
+	raw := strings.TrimSuffix(strings.TrimSpace(mapName), ".gat")
+	return g.Cities[norm] || g.Cities[raw]
 }
 
 func LoadPortalGraph(filename string) (*PortalGraph, error) {
@@ -93,6 +142,7 @@ func LoadPortalGraph(filename string) (*PortalGraph, error) {
 		}
 	}
 	_ = g.LoadPortalsLOS("portalsLOS.txt")
+	_ = g.LoadCities("tables/cities.txt", "../rozclub-go/tables/cities.txt", "../openkore/tables/cities.txt")
 	return g, nil
 }
 

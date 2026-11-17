@@ -264,15 +264,16 @@ func (b *SoloBot) startGPSLoop(stopGPS chan struct{}) {
 					}
 				} else {
 					// อยู่ใน LockMap แล้ว!
-					// ตรวจสอบชาแนล: หากอยู่นอกเมือง และแมพปัจจุบันยังไม่ใช่ช่อง B (เช่น ไม่ได้ลงท้ายด้วย 'b')
+					// ตรวจสอบชาแนล: ห้ามทำในเมืองเด็ดขาด (เช็กจาก Cities table)
+					isCity := b.router != nil && b.router.IsCity(b.mapName)
 					rawMap := strings.TrimSuffix(strings.TrimSpace(b.mapName), ".gat")
 					isFieldOrDun := strings.Contains(rawMap, "_fild") || strings.Contains(rawMap, "_dun") || strings.Contains(rawMap, "fild") || strings.Contains(rawMap, "dun")
-					needsChannelB := isFieldOrDun && !strings.HasSuffix(rawMap, "b")
+					needsChannelB := !isCity && isFieldOrDun && !strings.HasSuffix(rawMap, "b")
 
 					if needsChannelB && b.ChannelNpcFound && b.ChannelNpcGID > 0 {
 						if time.Since(b.LastChannelTry) >= 4*time.Second {
 							b.LastChannelTry = time.Now()
-							fmt.Printf("\n[📡 Channel Sync] แมพปัจจุบัน '%s' ยังไม่ใช่ช่อง B! กำลังเริ่มคุยเครื่องย้ายช่อง (GID: %d)...\n", b.mapName, b.ChannelNpcGID)
+							fmt.Printf("\n[📡 Channel Sync] แมพฟาร์ม '%s' ยังไม่ใช่ช่อง B! กำลังเริ่มคุยเครื่องย้ายช่อง (GID: %d)...\n", b.mapName, b.ChannelNpcGID)
 							_ = b.sendMapPacket(BuildTalk(b.ChannelNpcGID))
 						}
 						time.Sleep(1 * time.Second)
