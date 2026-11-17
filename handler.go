@@ -39,7 +39,26 @@ func (b *SoloBot) handleMapPacket(pktID uint16, packet []byte) {
 		b.currentX = newX
 		b.currentY = newY
 		if isMapChanged {
+			b.currentField = nil
 			fmt.Printf("\n[🌀 Map Move 0x0091] เปลี่ยนแมพสู่ %s ที่ (%d, %d)...\n", mapNameRaw, newX, newY)
+			_ = b.sendMapPacket(BuildMapLoaded())
+			_ = b.sendMapPacket(BuildBlockingCancel())
+		}
+		return
+	}
+
+	// 0x0092: Map Move / Server Change
+	if pktID == 0x0092 && len(packet) >= 28 {
+		mapNameRaw := string(bytes.TrimRight(packet[2:18], "\x00"))
+		newX := int(binary.LittleEndian.Uint16(packet[18:20]))
+		newY := int(binary.LittleEndian.Uint16(packet[20:22]))
+		isMapChanged := NormalizeMapName(mapNameRaw) != NormalizeMapName(b.mapName)
+		b.mapName = mapNameRaw
+		b.currentX = newX
+		b.currentY = newY
+		if isMapChanged {
+			b.currentField = nil
+			fmt.Printf("\n[🌀 Map Move 0x0092] เปลี่ยนแมพข้ามเซิร์ฟเวอร์สู่ %s ที่ (%d, %d)...\n", mapNameRaw, newX, newY)
 			_ = b.sendMapPacket(BuildMapLoaded())
 			_ = b.sendMapPacket(BuildBlockingCancel())
 		}
@@ -272,6 +291,12 @@ func (b *SoloBot) handleMapPacket(pktID uint16, packet []byte) {
 					} else {
 						b.jobLv = newJl
 					}
+				}
+				if m := extractKV(payload, "map"); m != "" {
+					if NormalizeMapName(m) != NormalizeMapName(b.mapName) {
+						b.currentField = nil
+					}
+					b.mapName = m
 				}
 				return
 			}

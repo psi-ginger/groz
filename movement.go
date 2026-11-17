@@ -71,6 +71,11 @@ func (b *SoloBot) checkWeightAndSupplies() {
 		fmt.Printf("\n[📦 Return to Merchant] น้ำหนักเต็ม %d%% (เกิน %d%%)! มุ่งหน้าไปหาแม่ค้า %s ที่ %s\n",
 			weightPct, b.cfg.ReturnWeight, b.cfg.MerchantName, b.cfg.MerchantLoc)
 
+		// สั่งปิด AutoHunt ทันทีเพื่อไม่ให้วิ่งตีมอนสเตอร์ขัดขวางการเดินทางกลับเมือง
+		if b.AutoHuntActive {
+			_ = b.StopAutoHunt()
+		}
+
 		// ใช้ Butterfly Wing ถ้ามี
 		if b.Inventory != nil {
 			bwingIdx, hasBwing := b.Inventory.FindItemIndex(602)
@@ -147,6 +152,8 @@ func (b *SoloBot) startGPSLoop(stopGPS chan struct{}) {
 					stepX := nextP.FromX
 					stepY := nextP.FromY
 					_ = b.sendMapPacket(BuildMove(stepX, stepY))
+					b.currentX = stepX
+					b.currentY = stepY
 					time.Sleep(2 * time.Second)
 					continue
 				}
@@ -241,6 +248,11 @@ func (b *SoloBot) startGPSLoop(stopGPS chan struct{}) {
 						time.Sleep(walkDuration)
 						b.currentX = walkX
 						b.currentY = walkY
+					}
+				} else {
+					// อยู่ใน LockMap แล้ว! ถ้ายังไม่ได้เปิด AutoHunt ให้เปิดทันที
+					if !b.AutoHuntActive && b.cfg.LockMap != "" {
+						_ = b.TriggerAutoHunt()
 					}
 				}
 			}
