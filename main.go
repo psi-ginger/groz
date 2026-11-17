@@ -10,13 +10,26 @@ import (
 
 func main() {
 	cfgFile := flag.String("c", "config.json", "Config file path")
+	cloudMode := flag.Bool("cloud", false, "Run in Cloud Multi-Account sync mode")
 	flag.Parse()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	if *cloudMode {
+		mgr := NewMultiBotManager("", "")
+		go func() {
+			<-sigChan
+			mgr.StopAll()
+			os.Exit(0)
+		}()
+		mgr.StartSyncLoop()
+		return
+	}
 
 	cfg := LoadConfig(*cfgFile)
 	bot := NewSoloBot(cfg)
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigChan
 		fmt.Println("\n\n[!] กำลังปิดบอทอย่างปลอดภัย...")
