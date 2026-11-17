@@ -292,6 +292,11 @@ func BuildTalkCancel(npcGID uint32) []byte {
 	return pkt
 }
 
+// BuildRestart (0x00B2 CZ_RESTART: 3 bytes: 2B header + 1B Type, Type 0 = Respawn to Save Point)
+func BuildRestart(restartType byte) []byte {
+	return []byte{0xB2, 0x00, restartType}
+}
+
 // BuildRozPacket (0x0CF0, 9 + N bytes)
 func BuildRozPacket(op byte, payload string) []byte {
 	payloadBytes := []byte(payload)

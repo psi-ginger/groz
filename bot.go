@@ -67,6 +67,9 @@ type SoloBot struct {
 	ChannelNpcFound bool
 	ChannelTalkStep int       // 0: ยังไม่ได้คุย, 1: เริ่มคุย (รอ Next), 2: รอตอบเมนู
 	LastChannelTry  time.Time // กันสแปมคุยรัว
+
+	// ระบบฟื้นคืนชีพ (Respawn)
+	LastDeathTime time.Time
 }
 
 func NewSoloBot(cfg Config) *SoloBot {

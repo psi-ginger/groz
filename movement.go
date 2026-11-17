@@ -62,6 +62,19 @@ func (b *SoloBot) checkAutoSkill() {
 }
 
 func (b *SoloBot) checkWeightAndSupplies() {
+	// ตรวจสอบตัวละครตาย (HP <= 0)
+	if b.maxHp > 0 && b.hp <= 0 {
+		if time.Since(b.LastDeathTime) >= 3*time.Second {
+			b.LastDeathTime = time.Now()
+			fmt.Println("\n[💀 Character Dead] ตัวละครเสียชีวิต (HP: 0)! ส่งคำสั่งฟื้นคืนชีพกลับจุดเซฟ (0x00B2)...")
+			if b.AutoHuntActive {
+				_ = b.StopAutoHunt()
+			}
+			_ = b.sendMapPacket(BuildRestart(0))
+		}
+		return
+	}
+
 	if b.MaxWeight <= 0 {
 		return
 	}
