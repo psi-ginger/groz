@@ -118,11 +118,9 @@ func (b *SoloBot) stepMap() error {
 			if !exists {
 				if streamBuf[0] == 0x19 && streamBuf[1] == 0x0B {
 					_ = b.sendMapPacket(BuildPingLive())
-					fmt.Println("[DBG-trace] ⚡ ตอบกลับ PingLive (0x0B1C)")
 					streamBuf = streamBuf[2:]
 					continue
 				}
-				fmt.Printf("[DBG-unknown] ⚠️ ไม่พบในตาราง: 0x%04X (byte0=%02X byte1=%02X)\n", pktID, streamBuf[0], streamBuf[1])
 				streamBuf = streamBuf[1:]
 				continue
 			}
@@ -144,10 +142,6 @@ func (b *SoloBot) stepMap() error {
 
 			packet := streamBuf[:actualLen]
 			streamBuf = streamBuf[actualLen:]
-
-			if pktID != 0x007F {
-				fmt.Printf("[DBG-pkt] 📥 0x%04X (len %d)\n", pktID, actualLen)
-			}
 
 			b.handleMapPacket(pktID, packet)
 		}

@@ -295,11 +295,9 @@ func (b *SoloBot) handleMapPacket(pktID uint16, packet []byte) {
 
 	// Roz Packet (0x0CF1): สเตตัส / น้ำหนัก / Client Guard Check
 	if pktID == 0x0CF1 {
-		fmt.Printf("\n[🔥 RAW-0x0CF1] len=%d data=%s\n", len(packet), b.dumpHex(packet))
 		if len(packet) >= 13 {
 			op := packet[12]
 			payload := string(packet[13:])
-			fmt.Printf("[🔥 RAW-0x0CF1-PAYLOAD] op=%d payload=%q\n", op, payload)
 
 			// Client Guard Check (OpCode 0x1E = 30 เท่านั้น ตาม Assembly ใน d3d9.dll)
 			if op == 0x1E {
