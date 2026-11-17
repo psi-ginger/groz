@@ -257,11 +257,7 @@ func (b *SoloBot) handleMapPacket(pktID uint16, packet []byte) {
 					if b.baseLv > 0 && newBl > b.baseLv {
 						fmt.Printf("\n[🎉 Level Up!] Base Level เพิ่มขึ้น: %d -> %d\n", b.baseLv, newBl)
 						b.baseLv = newBl
-						// หน่วงเวลาจำลองมนุษย์เล็กน้อย 1.2 วินาที ก่อนกดอัป Status
-						go func() {
-							time.Sleep(1200 * time.Millisecond)
-							b.checkAutoStat()
-						}()
+						b.checkAutoStat()
 					} else {
 						b.baseLv = newBl
 					}
@@ -272,11 +268,7 @@ func (b *SoloBot) handleMapPacket(pktID uint16, packet []byte) {
 					if b.jobLv > 0 && newJl > b.jobLv {
 						fmt.Printf("\n[🎉 Level Up!] Job Level เพิ่มขึ้น: %d -> %d\n", b.jobLv, newJl)
 						b.jobLv = newJl
-						// หน่วงเวลาจำลองมนุษย์เล็กน้อย 1.5 วินาที ก่อนกดอัป Skill
-						go func() {
-							time.Sleep(1500 * time.Millisecond)
-							b.checkAutoSkill()
-						}()
+						b.checkAutoSkill()
 					} else {
 						b.jobLv = newJl
 					}
