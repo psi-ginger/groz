@@ -1,2 +1,2 @@
-.\rozclub-solo.exe -c config.json
+.\rozclub-go.exe -c config.json
 pause
