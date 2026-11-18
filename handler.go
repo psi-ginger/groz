@@ -167,9 +167,9 @@ func (b *SoloBot) handleMapPacket(pktID uint16, packet []byte) {
 		menuStr := string(bytes.TrimRight(packet[8:], "\x00"))
 		fmt.Printf("[📋 NPC Menu (0x00B7)] GID %d ตัวเลือก: %s\n", npcID, menuStr)
 		if b.ChannelNpcFound && (b.ChannelNpcGID == npcID || b.ChannelNpcGID == 0) {
-			// ตอบเลือกตัวเลือกที่ 1 (ช่อง B)
-			fmt.Printf("[⚡ NPC Select] ส่งคำตอบเลือก 'ช่อง B' (Menu Index: 1) ไปยัง NPC %d\n", npcID)
-			_ = b.sendMapPacket(BuildTalkResponse(npcID, 1))
+			// ตอบเลือกตัวเลือกที่ 1 ของหน้าจอ = index 2 ของ RO Protocol (ช่อง B)
+			fmt.Printf("[⚡ NPC Select] ส่งคำตอบเลือก 'ช่อง B' (Menu Index 2) ไปยัง NPC %d\n", npcID)
+			_ = b.sendMapPacket(BuildTalkResponse(npcID, 2))
 			b.ChannelTalkStep = 0
 		}
 		return
